@@ -538,3 +538,33 @@ input[type="checkbox"].custom-check:checked::after {
 .subtask-completed .subtask-input {
   text-decoration: line-through;
 }
+
+@media(max-width:768px){
+.subtask-table{
+font-size:0.8rem;
+}
+2
+.subtask-table th,
+.subtask-table td {
+padding: 6px 4px;
+}
+.subtask-input {
+min-width: 120px;
+font-size: 16px;
+}
+.task-title-input {
+font-size: 1.3rem;
+}
+.property-row {
+flex-direction: column;
+align-items: flex-start;
+gap: 4px;
+}
+.property-label {
+width: auto;
+}
+.chip {
+max-width: 80px;
+font-size: 0.65rem;
+}
+}
