@@ -161,8 +161,11 @@ document.addEventListener('keydown', (e) => {
 // 初期化
 // ========================================
 
-document.addEventListener('DOMContentLoaded', () => {
-  // サンプルデータ投入（初回のみ）
+document.addEventListener('DOMContentLoaded', async () => {
+  // Firestoreから最新データを取り込む（接続失敗・空ならスキップ）
+  await bootstrapFromFirestore();
+
+  // サンプルデータ投入（Firestore/localStorage共に空のときだけ）
   initSampleData();
 
   // ホームページを表示

@@ -1,12 +1,36 @@
 /**
  * OneStep - データ管理モジュール
  * localStorage を使ったタスク・サブタスクの CRUD
+ * + Firestore 同期（Phase 2: 読み込みのみ）
  */
 
 const STORAGE_KEYS = {
   TASKS: 'onestep_tasks',
   SUBTASKS: 'onestep_subtasks',
 };
+
+// ========================================
+// Firebase 初期化
+// ========================================
+// ⚠️ Phase 1 で取得した firebaseConfig を以下に貼り付けてください。貼り付けました
+const firebaseConfig = {
+  apiKey: "AIzaSyCDxZtGgjWONu16TyrwxQDp5xjhnNZS_c4",
+  authDomain: "onestep-f1e42.firebaseapp.com",
+  projectId: "onestep-f1e42",
+  storageBucket: "onestep-f1e42.firebasestorage.app",
+  messagingSenderId: "187766148042",
+  appId: "1:187766148042:web:64fe4761575bc76a415d33"
+};
+
+
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  console.log('Firebase initialized ✓');
+} catch (e) {
+  console.warn('Firebase初期化失敗（localStorageのみで動作します）:', e);
+}
 
 // ========================================
 // ユーティリティ
@@ -299,4 +323,38 @@ function initSampleData() {
   createSubTask(task2.id, { title: 'デザインカンプ確認', startDate: fmt(today), dueDate: addDays(3) });
   createSubTask(task2.id, { title: 'コーディング実装', startDate: addDays(3), dueDate: addDays(10) });
   createSubTask(task2.id, { title: '動作テスト', startDate: addDays(10), dueDate: addDays(13) });
+}
+
+// ========================================
+// Firestore → localStorage 取り込み（起動時）
+// ========================================
+// 役割: アプリ起動時に1回だけFirestoreから全件取得し、
+//      localStorageへ書き込む。以降の読み込みはlocalStorage経由で高速。
+//      Firestoreが空・接続失敗時はlocalStorageだけで動作（既存挙動を維持）。
+
+async function bootstrapFromFirestore() {
+  if (!db) return; // Firebase未初期化なら何もしない
+
+  try {
+    const [tasksSnap, subtasksSnap] = await Promise.all([
+      db.collection('tasks').get(),
+      db.collection('subtasks').get(),
+    ]);
+
+    const tasksFromCloud = tasksSnap.docs.map(d => d.data());
+    const subtasksFromCloud = subtasksSnap.docs.map(d => d.data());
+
+    // Firestoreに何かあればlocalStorageを上書き
+    // （初回はFirestoreが空なので何もしない＝既存挙動）
+    if (tasksFromCloud.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasksFromCloud));
+      console.log(`Firestoreから ${tasksFromCloud.length} 件のタスクを取得`);
+    }
+    if (subtasksFromCloud.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.SUBTASKS, JSON.stringify(subtasksFromCloud));
+      console.log(`Firestoreから ${subtasksFromCloud.length} 件のサブタスクを取得`);
+    }
+  } catch (e) {
+    console.warn('Firestore取り込み失敗（localStorageで動作継続）:', e);
+  }
 }
