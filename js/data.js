@@ -82,7 +82,9 @@ function loadTasks() {
 }
 
 function saveTasks(tasks) {
+  const oldTasks = loadTasks();
   localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+  syncCollectionDiff('tasks', oldTasks, tasks); // fire-and-forget
 }
 
 function loadSubTasks() {
@@ -94,7 +96,9 @@ function loadSubTasks() {
 }
 
 function saveSubTasks(subtasks) {
+  const oldSubtasks = loadSubTasks();
   localStorage.setItem(STORAGE_KEYS.SUBTASKS, JSON.stringify(subtasks));
+  syncCollectionDiff('subtasks', oldSubtasks, subtasks); // fire-and-forget
 }
 
 // ========================================
@@ -344,17 +348,62 @@ async function bootstrapFromFirestore() {
     const tasksFromCloud = tasksSnap.docs.map(d => d.data());
     const subtasksFromCloud = subtasksSnap.docs.map(d => d.data());
 
-    // Firestoreに何かあればlocalStorageを上書き
-    // （初回はFirestoreが空なので何もしない＝既存挙動）
+    // タスク: Firestoreにデータがあれば取り込み、空ならlocalStorageを初回アップロード
     if (tasksFromCloud.length > 0) {
       localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasksFromCloud));
       console.log(`Firestoreから ${tasksFromCloud.length} 件のタスクを取得`);
+    } else {
+      const localTasks = loadTasks();
+      if (localTasks.length > 0) {
+        await syncCollectionDiff('tasks', [], localTasks);
+        console.log(`localStorage→Firestore: ${localTasks.length} 件のタスクを初回アップロード`);
+      }
     }
+
+    // サブタスク: 同上
     if (subtasksFromCloud.length > 0) {
       localStorage.setItem(STORAGE_KEYS.SUBTASKS, JSON.stringify(subtasksFromCloud));
       console.log(`Firestoreから ${subtasksFromCloud.length} 件のサブタスクを取得`);
+    } else {
+      const localSubtasks = loadSubTasks();
+      if (localSubtasks.length > 0) {
+        await syncCollectionDiff('subtasks', [], localSubtasks);
+        console.log(`localStorage→Firestore: ${localSubtasks.length} 件のサブタスクを初回アップロード`);
+      }
     }
   } catch (e) {
     console.warn('Firestore取り込み失敗（localStorageで動作継続）:', e);
+  }
+}
+
+// ========================================
+// Firestore 差分書き込みヘルパー
+// ========================================
+// 役割: 旧配列と新配列を比較し、変更/追加されたものだけwrite、消えたものをdelete。
+//       updatedAtフィールドの違いで「変更あり」と判定（既存CRUDが更新済み）。
+//       db未初期化や通信エラーは握りつぶしてlocalStorageで動作継続。
+
+async function syncCollectionDiff(collectionName, oldList, newList) {
+  if (!db) return;
+
+  const oldMap = new Map(oldList.map(x => [x.id, x]));
+  const newMap = new Map(newList.map(x => [x.id, x]));
+
+  const writes = newList.filter(x => {
+    const old = oldMap.get(x.id);
+    return !old || old.updatedAt !== x.updatedAt;
+  });
+  const deletes = oldList.filter(x => !newMap.has(x.id)).map(x => x.id);
+
+  if (writes.length === 0 && deletes.length === 0) return;
+
+  try {
+    const batch = db.batch();
+    writes.forEach(x => batch.set(db.collection(collectionName).doc(x.id), x));
+    deletes.forEach(id => batch.delete(db.collection(collectionName).doc(id)));
+    await batch.commit();
+    console.log(`Firestore[${collectionName}] write:${writes.length} delete:${deletes.length}`);
+  } catch (e) {
+    console.warn(`Firestore ${collectionName} sync failed:`, e);
   }
 }
