@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneStep - タスク管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="bg-gray-50 font-sans text-gray-800">
+
+  <!-- オーバーレイ -->
+  <div id="overlay" class="fixed inset-0 bg-black bg-opacity-40 z-30 hidden transition-opacity duration-300" onclick="closeSidebar()"></div>
+
+  <!-- サイドメニュー -->
+  <aside id="sidebar" class="fixed top-0 left-0 h-full w-64 bg-white z-40 transform -translate-x-full transition-transform duration-300 shadow-2xl flex flex-col">
+    <div class="p-6 border-b border-gray-100">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xl font-bold text-gray-900 tracking-tight">OneStep</span>
+        <button onclick="closeSidebar()" class="text-gray-400 hover:text-gray-600 transition-colors p-1">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <p class="text-xs text-gray-400">今やる1歩に集中する</p>
+    </div>
+    <nav class="flex-1 p-4 space-y-1">
+      <button onclick="navigateTo('home')" class="nav-item w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium" data-page="home">
+        <i class="fas fa-home w-4 text-center"></i>
+        <span>ホーム</span>
+      </button>
+      <button onclick="navigateTo('tasks')" class="nav-item w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium" data-page="tasks">
+        <i class="fas fa-list-check w-4 text-center"></i>
+        <span>未完了タスク一覧</span>
+      </button>
+      <button onclick="navigateTo('design')" class="nav-item w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium" data-page="design">
+        <i class="fas fa-pen-to-square w-4 text-center"></i>
+        <span>タスク設計</span>
+      </button>
+      <button onclick="navigateTo('completed')" class="nav-item w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium" data-page="completed">
+        <i class="fas fa-circle-check w-4 text-center"></i>
+        <span>完了済みタスク</span>
+      </button>
+      <button onclick="navigateTo('trash')" class="nav-item w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium" data-page="trash">
+        <i class="fas fa-trash-can w-4 text-center"></i>
+        <span>ゴミ箱</span>
+      </button>
+    </nav>
+    <div class="p-4 border-t border-gray-100">
+      <p class="text-xs text-gray-300 text-center">v1.0.0 MVP</p>
+    </div>
+  </aside>
+
+  <!-- メインコンテンツ -->
+  <div id="app" class="min-h-screen flex flex-col">
+
+    <!-- ヘッダー -->
+    <header class="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
+      <button onclick="openSidebar()" class="text-gray-500 hover:text-gray-800 transition-colors p-2 rounded-lg hover:bg-gray-100">
+        <i class="fas fa-bars text-lg"></i>
+      </button>
+      <h1 id="page-title" class="text-base font-semibold text-gray-700">ホーム</h1>
+      <div id="header-actions" class="w-10"></div>
+    </header>
+
+    <!-- ページコンテンツ -->
+    <main id="page-content" class="flex-1 p-6">
+      <!-- 各ページがここに描画される -->
+    </main>
+
+  </div>
+
+  <!-- モーダル: リンク追加 -->
+  <div id="modal-link" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-semibold mb-4 text-gray-800">URLを追加</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm text-gray-500 mb-1 block">表示名</label>
+          <input id="link-label" type="text" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="例: Notion ドキュメント" />
+        </div>
+        <div>
+          <label class="text-sm text-gray-500 mb-1 block">URL</label>
+          <input id="link-url" type="url" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="https://..." />
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="closeModal('modal-link')" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">キャンセル</button>
+        <button onclick="saveLink()" class="flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors">追加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル: ファイルパス追加 -->
+  <div id="modal-filepath" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-semibold mb-4 text-gray-800">ファイルパスを追加</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm text-gray-500 mb-1 block">表示名</label>
+          <input id="fp-label" type="text" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="例: 設計書.xlsx" />
+        </div>
+        <div>
+          <label class="text-sm text-gray-500 mb-1 block">ファイルパス</label>
+          <input id="fp-path" type="text" class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent font-mono" placeholder="C:\Users\..." />
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="closeModal('modal-filepath')" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">キャンセル</button>
+        <button onclick="saveFilePath()" class="flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors">追加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダルオーバーレイ -->
+  <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-30 z-40 hidden" onclick="closeAllModals()"></div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden">
+    <div class="bg-gray-900 text-white text-sm px-5 py-3 rounded-full shadow-lg flex items-center gap-2">
+      <i class="fas fa-circle-check text-green-400"></i>
+      <span id="toast-message">完了しました</span>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/pages.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

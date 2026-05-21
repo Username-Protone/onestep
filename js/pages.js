@@ -1,0 +1,694 @@
+/**
+ * OneStep - ページ描画モジュール
+ * 各画面のレンダリング関数
+ */
+
+// ========================================
+// ホーム画面
+// ========================================
+
+function renderHome() {
+  setPageTitle('ホーム');
+  setHeaderActions('');
+
+  const subtask = getNextSubTask();
+  const content = document.getElementById('page-content');
+
+  if (!subtask) {
+    content.innerHTML = `
+      <div class="flex items-center justify-center" style="min-height: 60vh;">
+        <div class="text-center">
+          <div class="empty-state">
+            <i class="fas fa-check-circle" style="color: #d1fae5; font-size: 72px;"></i>
+            <h2 class="text-2xl font-semibold text-gray-700 mt-4">すべて完了！</h2>
+            <p class="text-gray-400 text-sm mt-2">今は実行中のタスクがありません。</p>
+          </div>
+          <div class="mt-8 flex gap-3 justify-center">
+            <button onclick="navigateTo('design')" class="btn-primary">
+              <i class="fas fa-plus"></i> 新しいタスクを設計
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const task = getTaskById(subtask.taskId);
+  const days = daysUntil(subtask.dueDate);
+  const urgentClass = (days !== null && days <= 3) ? 'text-red-500' : 'text-gray-500';
+  const urgentBg = (days !== null && days <= 3) ? 'bg-red-50' : 'bg-blue-50';
+
+  // リンクとファイルパスのチップ
+  const linksHtml = (subtask.links || []).map(l => `
+    <a href="${escHtml(l.url)}" target="_blank" rel="noopener" class="chip chip-link" title="${escHtml(l.url)}">
+      <i class="fas fa-link" style="font-size:9px;"></i> ${escHtml(l.label || l.url)}
+    </a>
+  `).join('');
+
+  const filesHtml = (subtask.filePaths || []).map(f => `
+    <span class="chip chip-file" title="${escHtml(f.path)}">
+      <i class="fas fa-folder" style="font-size:9px;"></i> ${escHtml(f.label || f.path)}
+    </span>
+  `).join('');
+
+  const chipsHtml = (linksHtml || filesHtml)
+    ? `<div class="flex flex-wrap gap-2 mt-4">${linksHtml}${filesHtml}</div>`
+    : '';
+
+  content.innerHTML = `
+    <div class="flex flex-col items-center justify-center" style="min-height: 60vh;">
+      <div class="home-card w-full max-w-lg p-10">
+
+        <!-- 親タスク名 -->
+        <div class="mb-6">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">現在のタスク</p>
+          <p class="text-sm text-gray-500 font-medium">${escHtml(task ? task.title : '—')}</p>
+        </div>
+
+        <div class="divider" style="margin: 0 0 24px 0;"></div>
+
+        <!-- サブタスク名（メイン） -->
+        <div class="mb-8">
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">今やること</p>
+          <h2 class="text-2xl font-bold text-gray-900 leading-tight">${escHtml(subtask.title || '（タイトルなし）')}</h2>
+          ${chipsHtml}
+        </div>
+
+        <!-- 日付情報 -->
+        <div class="flex gap-6 mb-10">
+          <div>
+            <p class="text-xs text-gray-400 mb-1">着手日</p>
+            <p class="text-sm font-medium text-gray-700">${formatDate(subtask.startDate)}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 mb-1">締切日</p>
+            <p class="text-sm font-medium ${urgentClass}">${formatDate(subtask.dueDate)}</p>
+          </div>
+          ${days !== null ? `
+          <div>
+            <p class="text-xs text-gray-400 mb-1">残り</p>
+            <p class="text-sm font-bold ${urgentClass}">${days < 0 ? '期限切れ' : days === 0 ? '今日' : `${days} 日`}</p>
+          </div>` : ''}
+        </div>
+
+        <!-- 完了ボタン -->
+        <button onclick="handleCompleteSubTask('${subtask.id}')" class="done-button w-full">
+          <i class="fas fa-check mr-2"></i> 完了にする
+        </button>
+
+      </div>
+
+      <!-- 下部リンク -->
+      <div class="mt-6 flex gap-4 text-sm text-gray-400">
+        <button onclick="navigateTo('design', '${subtask.taskId}')" class="hover:text-blue-500 transition-colors">
+          <i class="fas fa-pen-to-square mr-1"></i> タスクを編集
+        </button>
+        <span class="text-gray-200">|</span>
+        <button onclick="navigateTo('tasks')" class="hover:text-blue-500 transition-colors">
+          <i class="fas fa-list mr-1"></i> 一覧を見る
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function handleCompleteSubTask(id) {
+  completeSubTask(id);
+  showToast('サブタスクを完了しました ✓');
+  renderHome();
+}
+
+// ========================================
+// 未完了タスク一覧
+// ========================================
+
+function renderTasks() {
+  setPageTitle('未完了タスク一覧');
+  setHeaderActions(`
+    <button onclick="navigateTo('design')" class="btn-primary text-xs py-2 px-4">
+      <i class="fas fa-plus"></i> 新規
+    </button>
+  `);
+
+  const tasks = getActiveTasks();
+  const content = document.getElementById('page-content');
+
+  if (tasks.length === 0) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-list-check"></i>
+        <p class="text-lg font-medium text-gray-500">未完了のタスクはありません</p>
+        <p class="text-sm text-gray-400">タスク設計から新しいタスクを追加しましょう</p>
+        <button onclick="navigateTo('design')" class="btn-primary mt-4">
+          <i class="fas fa-plus"></i> タスクを作成
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const rows = tasks.map(task => {
+    const next = getNextSubTaskForTask(task.id);
+    const subtasks = getSubTasksByTaskId(task.id);
+    const completedCount = subtasks.filter(s => s.completed).length;
+    const progress = subtasks.length > 0
+      ? Math.round((completedCount / subtasks.length) * 100)
+      : 0;
+
+    const nextTitle = next ? escHtml(next.title) : '<span class="text-gray-300">—</span>';
+    const nextDue = next ? formatDate(next.dueDate) : '—';
+    const days = next ? daysUntil(next.dueDate) : null;
+    const urgentClass = (days !== null && days <= 3) ? 'text-red-500 font-semibold' : 'text-gray-600';
+
+    return `
+      <tr onclick="navigateTo('design', '${task.id}')" class="cursor-pointer hover:bg-blue-50 transition-colors">
+        <td class="px-4 py-3">
+          <div class="font-semibold text-gray-800">${escHtml(task.title || '（タイトルなし）')}</div>
+          <div class="mt-1 flex items-center gap-2">
+            <div class="h-1.5 rounded-full bg-gray-100 flex-1" style="max-width:120px;">
+              <div class="h-1.5 rounded-full bg-blue-400 transition-all" style="width:${progress}%"></div>
+            </div>
+            <span class="text-xs text-gray-400">${completedCount}/${subtasks.length}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-gray-600">${nextTitle}</td>
+        <td class="px-4 py-3 text-sm text-gray-500">${formatDate(task.startDate)}</td>
+        <td class="px-4 py-3 text-sm ${urgentClass}">${nextDue}</td>
+      </tr>
+    `;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="card overflow-hidden">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:35%">タスク名</th>
+            <th style="width:30%">次のサブタスク</th>
+            <th style="width:17%">着手日</th>
+            <th style="width:18%">締切日</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ========================================
+// タスク設計画面
+// ========================================
+
+let currentDesignTaskId = null;
+let modalContext = null; // { subtaskId, type: 'link'|'filepath', index?: number }
+
+function renderDesign(taskId) {
+  setPageTitle('タスク設計');
+
+  let task;
+  if (taskId) {
+    task = getTaskById(taskId);
+    if (!task) {
+      // 存在しないIDなら新規作成
+      task = createTask();
+    }
+  } else {
+    task = createTask();
+  }
+  currentDesignTaskId = task.id;
+
+  setHeaderActions(`
+    <div class="flex gap-2">
+      <button onclick="deleteCurrentTask()" class="btn-danger text-xs py-1.5 px-3">
+        <i class="fas fa-trash-can"></i>
+      </button>
+    </div>
+  `);
+
+  renderDesignView(task);
+}
+
+function renderDesignView(task) {
+  const subtasks = getSubTasksByTaskId(task.id);
+  const content = document.getElementById('page-content');
+
+  const subtaskRows = subtasks.map((s, idx) => renderSubTaskRow(s, idx)).join('');
+
+  content.innerHTML = `
+    <div class="design-container">
+
+      <!-- タスクタイトル -->
+      <div class="mb-6">
+        <input
+          id="task-title"
+          type="text"
+          class="task-title-input"
+          placeholder="タスクタイトルを入力..."
+          value="${escHtml(task.title)}"
+          onblur="saveTaskField('title', this.value)"
+          onkeydown="if(event.key==='Enter') this.blur()"
+        />
+      </div>
+
+      <!-- タスク基本情報 -->
+      <div class="card p-5 mb-6">
+        <p class="section-title">タスク情報</p>
+        <div class="space-y-2">
+          <div class="property-row">
+            <span class="property-label"><i class="fas fa-calendar-day text-gray-300 mr-1"></i> 着手日</span>
+            <input
+              type="date"
+              class="property-input"
+              value="${task.startDate || ''}"
+              onchange="saveTaskField('startDate', this.value)"
+            />
+          </div>
+          <div class="property-row">
+            <span class="property-label"><i class="fas fa-flag text-gray-300 mr-1"></i> 締切日</span>
+            <input
+              type="date"
+              class="property-input"
+              value="${task.dueDate || ''}"
+              onchange="saveTaskField('dueDate', this.value)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- サブタスク一覧 -->
+      <div class="card overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p class="section-title mb-0">サブタスク</p>
+          <span class="text-xs text-gray-400">${subtasks.filter(s=>s.completed).length} / ${subtasks.length} 完了</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="subtask-table" id="subtask-table">
+            <colgroup>
+              <col style="width: 40px;">   <!-- No -->
+              <col style="width: 40px;">   <!-- check -->
+              <col>                        <!-- タイトル -->
+              <col style="width: 130px;"> <!-- 着手日 -->
+              <col style="width: 130px;"> <!-- 締切日 -->
+              <col style="width: 180px;"> <!-- リンク/ファイル -->
+              <col style="width: 40px;">  <!-- 操作 -->
+            </colgroup>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th></th>
+                <th>サブタスク名</th>
+                <th>着手日</th>
+                <th>締切日</th>
+                <th>リンク / ファイル</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="subtask-tbody">
+              ${subtaskRows}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- サブタスク追加ボタン -->
+        <div class="px-3 py-2 border-t border-gray-50">
+          <button onclick="addSubTask()" class="add-row-btn text-gray-400 hover:text-blue-500 transition-colors flex items-center gap-1.5 text-sm">
+            <i class="fas fa-plus text-xs"></i> サブタスクを追加
+          </button>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderSubTaskRow(s, idx) {
+  const linksHtml = (s.links || []).map((l, li) => `
+    <a href="${escHtml(l.url)}" target="_blank" rel="noopener" class="chip chip-link" title="${escHtml(l.url)}">
+      <i class="fas fa-link" style="font-size:8px;"></i> ${escHtml(l.label || 'URL')}
+      <span class="chip-remove" onclick="event.preventDefault();removeLink('${s.id}',${li})" title="削除"><i class="fas fa-xmark"></i></span>
+    </a>
+  `).join('');
+
+  const filesHtml = (s.filePaths || []).map((f, fi) => `
+    <span class="chip chip-file" title="${escHtml(f.path)}">
+      <i class="fas fa-folder" style="font-size:8px;"></i> ${escHtml(f.label || 'ファイル')}
+      <span class="chip-remove" onclick="removeFilePath('${s.id}',${fi})" title="削除"><i class="fas fa-xmark"></i></span>
+    </span>
+  `).join('');
+
+  const completedClass = s.completed ? 'subtask-completed' : '';
+
+  return `
+    <tr class="${completedClass}" id="strow-${s.id}">
+      <td class="text-center text-gray-400 text-xs select-none">${s.no}</td>
+      <td class="text-center">
+        <input
+          type="checkbox"
+          class="custom-check"
+          ${s.completed ? 'checked' : ''}
+          onchange="toggleSubTaskComplete('${s.id}', this.checked)"
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          class="subtask-input"
+          value="${escHtml(s.title)}"
+          placeholder="サブタスク名..."
+          onblur="saveSubTaskField('${s.id}', 'title', this.value)"
+          onkeydown="handleSubTaskKeydown(event, '${s.id}')"
+          style="${s.completed ? 'text-decoration: line-through; opacity: 0.5;' : ''}"
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          class="subtask-input date-input"
+          value="${s.startDate || ''}"
+          onchange="saveSubTaskField('${s.id}', 'startDate', this.value)"
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          class="subtask-input date-input"
+          value="${s.dueDate || ''}"
+          onchange="saveSubTaskField('${s.id}', 'dueDate', this.value)"
+        />
+      </td>
+      <td>
+        <div class="flex flex-wrap gap-1 items-center">
+          ${linksHtml}
+          ${filesHtml}
+          <button onclick="openLinkModal('${s.id}')" class="text-gray-300 hover:text-blue-400 transition-colors" title="URLを追加">
+            <i class="fas fa-link text-xs"></i>
+          </button>
+          <button onclick="openFilePathModal('${s.id}')" class="text-gray-300 hover:text-green-400 transition-colors ml-1" title="ファイルパスを追加">
+            <i class="fas fa-folder-open text-xs"></i>
+          </button>
+        </div>
+      </td>
+      <td class="text-center">
+        <button onclick="removeSubTask('${s.id}')" class="text-gray-200 hover:text-red-400 transition-colors p-1" title="削除">
+          <i class="fas fa-xmark text-xs"></i>
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+function refreshSubTaskTable() {
+  const task = getTaskById(currentDesignTaskId);
+  if (!task) return;
+  const subtasks = getSubTasksByTaskId(task.id);
+  const tbody = document.getElementById('subtask-tbody');
+  if (tbody) {
+    tbody.innerHTML = subtasks.map((s, idx) => renderSubTaskRow(s, idx)).join('');
+  }
+  // 進捗テキスト更新
+  const card = document.querySelector('.card .flex.items-center.justify-between span');
+  if (card) {
+    card.textContent = `${subtasks.filter(s=>s.completed).length} / ${subtasks.length} 完了`;
+  }
+}
+
+function saveTaskField(field, value) {
+  if (!currentDesignTaskId) return;
+  updateTask(currentDesignTaskId, { [field]: value });
+}
+
+function saveSubTaskField(id, field, value) {
+  updateSubTask(id, { [field]: value });
+}
+
+function toggleSubTaskComplete(id, checked) {
+  if (checked) {
+    completeSubTask(id);
+  } else {
+    uncompleteSubTask(id);
+  }
+  refreshSubTaskTable();
+}
+
+function addSubTask() {
+  if (!currentDesignTaskId) return;
+  const s = createSubTask(currentDesignTaskId);
+  refreshSubTaskTable();
+  // 新しい行のinputにフォーカス
+  setTimeout(() => {
+    const row = document.getElementById(`strow-${s.id}`);
+    if (row) {
+      const input = row.querySelector('.subtask-input');
+      if (input) input.focus();
+    }
+  }, 50);
+}
+
+function removeSubTask(id) {
+  deleteSubTask(id);
+  refreshSubTaskTable();
+}
+
+function deleteCurrentTask() {
+  if (!currentDesignTaskId) return;
+  if (!confirm('このタスクをゴミ箱に移動しますか？')) return;
+  deleteTask(currentDesignTaskId);
+  showToast('タスクをゴミ箱に移動しました');
+  navigateTo('tasks');
+}
+
+function handleSubTaskKeydown(event, id) {
+  if (event.key === 'Enter') {
+    event.target.blur();
+    addSubTask();
+  }
+  if (event.key === 'Escape') {
+    event.target.blur();
+  }
+}
+
+// ========================================
+// リンク・ファイルパス モーダル
+// ========================================
+
+function openLinkModal(subtaskId) {
+  modalContext = { subtaskId, type: 'link' };
+  document.getElementById('link-label').value = '';
+  document.getElementById('link-url').value = '';
+  openModal('modal-link');
+}
+
+function openFilePathModal(subtaskId) {
+  modalContext = { subtaskId, type: 'filepath' };
+  document.getElementById('fp-label').value = '';
+  document.getElementById('fp-path').value = '';
+  openModal('modal-filepath');
+}
+
+function saveLink() {
+  if (!modalContext) return;
+  const label = document.getElementById('link-label').value.trim();
+  const url = document.getElementById('link-url').value.trim();
+  if (!url) { alert('URLを入力してください'); return; }
+
+  const s = loadSubTasks().find(s => s.id === modalContext.subtaskId);
+  if (!s) return;
+  const links = [...(s.links || []), { label: label || url, url }];
+  updateSubTask(s.id, { links });
+  closeModal('modal-link');
+  refreshSubTaskTable();
+  showToast('URLを追加しました');
+}
+
+function saveFilePath() {
+  if (!modalContext) return;
+  const label = document.getElementById('fp-label').value.trim();
+  const path = document.getElementById('fp-path').value.trim();
+  if (!path) { alert('ファイルパスを入力してください'); return; }
+
+  const s = loadSubTasks().find(s => s.id === modalContext.subtaskId);
+  if (!s) return;
+  const filePaths = [...(s.filePaths || []), { label: label || path, path }];
+  updateSubTask(s.id, { filePaths });
+  closeModal('modal-filepath');
+  refreshSubTaskTable();
+  showToast('ファイルパスを追加しました');
+}
+
+function removeLink(subtaskId, index) {
+  const s = loadSubTasks().find(s => s.id === subtaskId);
+  if (!s) return;
+  const links = [...(s.links || [])];
+  links.splice(index, 1);
+  updateSubTask(subtaskId, { links });
+  refreshSubTaskTable();
+}
+
+function removeFilePath(subtaskId, index) {
+  const s = loadSubTasks().find(s => s.id === subtaskId);
+  if (!s) return;
+  const filePaths = [...(s.filePaths || [])];
+  filePaths.splice(index, 1);
+  updateSubTask(subtaskId, { filePaths });
+  refreshSubTaskTable();
+}
+
+// ========================================
+// 完了済みタスク
+// ========================================
+
+function renderCompleted() {
+  setPageTitle('完了済みタスク');
+  setHeaderActions('');
+
+  const tasks = getCompletedTasks();
+  const content = document.getElementById('page-content');
+
+  if (tasks.length === 0) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-circle-check"></i>
+        <p class="text-lg font-medium text-gray-500">完了済みタスクはまだありません</p>
+        <p class="text-sm text-gray-400">タスクのすべてのサブタスクが完了すると、ここに表示されます</p>
+      </div>
+    `;
+    return;
+  }
+
+  const cards = tasks.map(task => {
+    const subtasks = getSubTasksByTaskId(task.id);
+    const subRows = subtasks.map(s => `
+      <div class="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+        <i class="fas fa-check-circle text-green-400 text-xs flex-shrink-0"></i>
+        <span class="text-sm text-gray-500 line-through">${escHtml(s.title)}</span>
+        <span class="ml-auto text-xs text-gray-300">${formatDate(s.dueDate)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="card p-5 mb-4">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <span class="badge badge-completed mb-2"><i class="fas fa-check mr-1"></i> 完了</span>
+            <h3 class="font-semibold text-gray-700 line-through">${escHtml(task.title || '（タイトルなし）')}</h3>
+          </div>
+          <button onclick="moveToTrash('${task.id}')" class="text-gray-300 hover:text-red-400 transition-colors p-1 text-sm" title="ゴミ箱へ">
+            <i class="fas fa-trash-can"></i>
+          </button>
+        </div>
+        <div class="flex gap-4 text-xs text-gray-400 mb-3">
+          <span><i class="fas fa-calendar-day mr-1"></i> 着手: ${formatDate(task.startDate)}</span>
+          <span><i class="fas fa-flag mr-1"></i> 締切: ${formatDate(task.dueDate)}</span>
+        </div>
+        <div class="divider" style="margin: 12px 0;"></div>
+        <div>${subRows}</div>
+      </div>
+    `;
+  }).join('');
+
+  content.innerHTML = `<div class="max-w-2xl">${cards}</div>`;
+}
+
+function moveToTrash(taskId) {
+  deleteTask(taskId);
+  showToast('ゴミ箱に移動しました');
+  renderCompleted();
+}
+
+// ========================================
+// ゴミ箱
+// ========================================
+
+function renderTrash() {
+  setPageTitle('ゴミ箱');
+  setHeaderActions(`
+    <button onclick="emptyTrash()" class="btn-danger text-xs py-1.5 px-3">
+      <i class="fas fa-trash-can mr-1"></i> 全て削除
+    </button>
+  `);
+
+  const tasks = getDeletedTasks();
+  const content = document.getElementById('page-content');
+
+  if (tasks.length === 0) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-trash-can"></i>
+        <p class="text-lg font-medium text-gray-500">ゴミ箱は空です</p>
+      </div>
+    `;
+    return;
+  }
+
+  const cards = tasks.map(task => `
+    <div class="card p-4 mb-3 flex items-center justify-between">
+      <div>
+        <p class="font-medium text-gray-600">${escHtml(task.title || '（タイトルなし）')}</p>
+        <p class="text-xs text-gray-400 mt-0.5">締切: ${formatDate(task.dueDate)}</p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="restoreTaskFromTrash('${task.id}')" class="btn-secondary text-xs py-1.5 px-3">
+          <i class="fas fa-rotate-left mr-1"></i> 復元
+        </button>
+        <button onclick="permanentRemoveTask('${task.id}')" class="btn-danger text-xs py-1.5 px-3">
+          <i class="fas fa-xmark mr-1"></i> 完全削除
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  content.innerHTML = `
+    <div class="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-700 flex items-center gap-2">
+      <i class="fas fa-triangle-exclamation"></i>
+      完全削除すると元に戻せません
+    </div>
+    <div class="max-w-2xl">${cards}</div>
+  `;
+}
+
+function restoreTaskFromTrash(id) {
+  restoreTask(id);
+  showToast('タスクを復元しました');
+  renderTrash();
+}
+
+function permanentRemoveTask(id) {
+  if (!confirm('完全に削除しますか？この操作は取り消せません。')) return;
+  permanentDeleteTask(id);
+  showToast('完全に削除しました');
+  renderTrash();
+}
+
+function emptyTrash() {
+  const tasks = getDeletedTasks();
+  if (tasks.length === 0) return;
+  if (!confirm(`ゴミ箱内の${tasks.length}件を完全に削除しますか？この操作は取り消せません。`)) return;
+  tasks.forEach(t => permanentDeleteTask(t.id));
+  showToast('ゴミ箱を空にしました');
+  renderTrash();
+}
+
+// ========================================
+// ユーティリティ
+// ========================================
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function setPageTitle(title) {
+  document.getElementById('page-title').textContent = title;
+}
+
+function setHeaderActions(html) {
+  document.getElementById('header-actions').innerHTML = html;
+}
