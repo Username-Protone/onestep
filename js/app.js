@@ -87,10 +87,11 @@ function closeModal(id) {
   modal.classList.remove('flex', 'show');
   document.getElementById('modal-overlay').classList.add('hidden');
   modalContext = null;
+  if (id === 'modal-context') currentContextModalSubtaskId = null;
 }
 
 function closeAllModals() {
-  ['modal-link', 'modal-filepath'].forEach(id => {
+  ['modal-link', 'modal-filepath', 'modal-context'].forEach(id => {
     const modal = document.getElementById(id);
     if (modal) {
       modal.classList.add('hidden');
@@ -99,6 +100,7 @@ function closeAllModals() {
   });
   document.getElementById('modal-overlay').classList.add('hidden');
   modalContext = null;
+  currentContextModalSubtaskId = null;
 }
 
 // Enterキーでモーダル内のフォームをサブミット
@@ -164,6 +166,9 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', async () => {
   // Firestoreから最新データを取り込む（接続失敗・空ならスキップ）
   await bootstrapFromFirestore();
+
+  // 実行条件マスターのデフォルト投入（Firestore/localStorage共に空のときだけ）
+  initContextMasterSeed();
 
   // サンプルデータ投入（Firestore/localStorage共に空のときだけ）
   initSampleData();

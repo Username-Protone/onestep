@@ -7,6 +7,9 @@
 const STORAGE_KEYS = {
   TASKS: 'onestep_tasks',
   SUBTASKS: 'onestep_subtasks',
+  CONTEXT_CATEGORIES: 'onestep_context_categories',
+  CONTEXT_VALUES: 'onestep_context_values',
+  CURRENT_CONTEXT: 'onestep_current_context', // ローカル限定・Firestore同期しない
 };
 
 // ========================================
@@ -188,6 +191,7 @@ function createSubTask(taskId, { title = '', startDate = '', dueDate = '' } = {}
     deleted: false,
     links: [],      // [{ label: string, url: string }]
     filePaths: [],  // [{ label: string, path: string }]
+    contextValueIds: [], // ExecutionContextValue.id の配列（空=そのカテゴリは条件なし）
     createdAt: now(),
     updatedAt: now(),
   };
@@ -272,7 +276,8 @@ function getNextSubTask() {
   const subtasks = loadSubTasks().filter(s =>
     activeTasks.includes(s.taskId) &&
     !s.completed &&
-    !s.deleted
+    !s.deleted &&
+    subtaskMatchesCurrentContext(s)
   );
 
   if (subtasks.length === 0) return null;
@@ -286,6 +291,15 @@ function getNextSubTask() {
   });
 
   return subtasks[0];
+}
+
+// 実行条件フィルタを無視して、未完了サブタスクが1件でも存在するか
+// （ホーム画面で「すべて完了」と「今の条件に合うタスクなし」を区別するために使用）
+function hasAnyIncompleteSubtask() {
+  const activeTasks = getActiveTasks().map(t => t.id);
+  return loadSubTasks().some(s =>
+    activeTasks.includes(s.taskId) && !s.completed && !s.deleted
+  );
 }
 
 // ========================================
@@ -304,6 +318,160 @@ function getNextSubTaskForTask(taskId) {
     return a.createdAt.localeCompare(b.createdAt);
   });
   return subtasks[0];
+}
+
+// ========================================
+// 実行条件マスター（Execution Context）
+// カテゴリ（場所・状態…）と候補（自宅・電車…）を
+// アプリ全体で共有し、SubTask は候補IDのみを参照する。
+// カテゴリを追加してもSubTaskのスキーマは変わらない。
+// ========================================
+
+function loadContextCategories() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.CONTEXT_CATEGORIES) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveContextCategories(categories) {
+  const old = loadContextCategories();
+  localStorage.setItem(STORAGE_KEYS.CONTEXT_CATEGORIES, JSON.stringify(categories));
+  syncCollectionDiff('contextCategories', old, categories);
+}
+
+function loadContextValues() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.CONTEXT_VALUES) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveContextValues(values) {
+  const old = loadContextValues();
+  localStorage.setItem(STORAGE_KEYS.CONTEXT_VALUES, JSON.stringify(values));
+  syncCollectionDiff('contextValues', old, values);
+}
+
+function getContextCategories() {
+  return loadContextCategories().slice().sort((a, b) => a.order - b.order);
+}
+
+function getContextValuesByCategory(categoryId) {
+  return loadContextValues()
+    .filter(v => v.categoryId === categoryId)
+    .sort((a, b) => a.order - b.order);
+}
+
+function createContextCategory({ key, label, order } = {}) {
+  const categories = loadContextCategories();
+  const category = {
+    id: generateId(),
+    key,
+    label,
+    order: order ?? categories.length,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  categories.push(category);
+  saveContextCategories(categories);
+  return category;
+}
+
+function createContextValue(categoryId, label) {
+  const values = loadContextValues();
+  const orderInCat = values.filter(v => v.categoryId === categoryId).length;
+  const value = {
+    id: generateId(),
+    categoryId,
+    label,
+    order: orderInCat,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  values.push(value);
+  saveContextValues(values);
+  return value;
+}
+
+function updateContextValue(id, fields) {
+  const values = loadContextValues();
+  const idx = values.findIndex(v => v.id === id);
+  if (idx === -1) return null;
+  values[idx] = { ...values[idx], ...fields, updatedAt: now() };
+  saveContextValues(values);
+  return values[idx];
+}
+
+// 初回起動時のみ、デフォルトの「場所」「状態」カテゴリと候補を投入する
+function initContextMasterSeed() {
+  if (loadContextCategories().length > 0) return;
+
+  const locationCat = createContextCategory({ key: 'location', label: '場所', order: 0 });
+  ['自宅', '大学', '電車', '外出先'].forEach(label => createContextValue(locationCat.id, label));
+
+  const stateCat = createContextCategory({ key: 'state', label: '状態', order: 1 });
+  ['集中できる', '普通', '疲れている'].forEach(label => createContextValue(stateCat.id, label));
+}
+
+// ========================================
+// 現在の実行条件（デバイスローカル・Firestore同期しない）
+// カテゴリごとに1候補のみ選択（例: 場所=電車, 状態=疲れている）
+// ========================================
+
+function loadCurrentContext() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_CONTEXT) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveCurrentContext(context) {
+  localStorage.setItem(STORAGE_KEYS.CURRENT_CONTEXT, JSON.stringify(context));
+}
+
+// 同じ値を選び直したら「未設定」に戻す（トグル動作）
+function setCurrentContextValue(categoryId, valueId) {
+  const context = loadCurrentContext();
+  if (context[categoryId] === valueId) {
+    delete context[categoryId];
+  } else {
+    context[categoryId] = valueId;
+  }
+  saveCurrentContext(context);
+  return context;
+}
+
+function toggleSubTaskContextValue(subtaskId, valueId) {
+  const subtasks = loadSubTasks();
+  const target = subtasks.find(s => s.id === subtaskId);
+  if (!target) return null;
+  const ids = new Set(target.contextValueIds || []);
+  if (ids.has(valueId)) ids.delete(valueId); else ids.add(valueId);
+  return updateSubTask(subtaskId, { contextValueIds: Array.from(ids) });
+}
+
+// サブタスクが「現在の実行条件」に一致するか判定
+// カテゴリ内でサブタスクの候補が空 → そのカテゴリは無条件で合格（未設定=すべて可）
+// 現在の実行条件が未選択のカテゴリ → フィルタしない
+function subtaskMatchesCurrentContext(subtask) {
+  const categories = getContextCategories();
+  if (categories.length === 0) return true;
+
+  const currentContext = loadCurrentContext();
+  const valueCategoryMap = new Map(loadContextValues().map(v => [v.id, v.categoryId]));
+  const subtaskValueIds = subtask.contextValueIds || [];
+
+  return categories.every(cat => {
+    const subtaskValuesInCat = subtaskValueIds.filter(vid => valueCategoryMap.get(vid) === cat.id);
+    if (subtaskValuesInCat.length === 0) return true;
+    const activeValueId = currentContext[cat.id];
+    if (!activeValueId) return true;
+    return subtaskValuesInCat.includes(activeValueId);
+  });
 }
 
 // ========================================
@@ -340,13 +508,17 @@ async function bootstrapFromFirestore() {
   if (!db) return; // Firebase未初期化なら何もしない
 
   try {
-    const [tasksSnap, subtasksSnap] = await Promise.all([
+    const [tasksSnap, subtasksSnap, categoriesSnap, valuesSnap] = await Promise.all([
       db.collection('tasks').get(),
       db.collection('subtasks').get(),
+      db.collection('contextCategories').get(),
+      db.collection('contextValues').get(),
     ]);
 
     const tasksFromCloud = tasksSnap.docs.map(d => d.data());
     const subtasksFromCloud = subtasksSnap.docs.map(d => d.data());
+    const categoriesFromCloud = categoriesSnap.docs.map(d => d.data());
+    const valuesFromCloud = valuesSnap.docs.map(d => d.data());
 
     // タスク: Firestoreにデータがあれば取り込み、空ならlocalStorageを初回アップロード
     if (tasksFromCloud.length > 0) {
@@ -369,6 +541,30 @@ async function bootstrapFromFirestore() {
       if (localSubtasks.length > 0) {
         await syncCollectionDiff('subtasks', [], localSubtasks);
         console.log(`localStorage→Firestore: ${localSubtasks.length} 件のサブタスクを初回アップロード`);
+      }
+    }
+
+    // 実行条件カテゴリ: 同上
+    if (categoriesFromCloud.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.CONTEXT_CATEGORIES, JSON.stringify(categoriesFromCloud));
+      console.log(`Firestoreから ${categoriesFromCloud.length} 件の実行条件カテゴリを取得`);
+    } else {
+      const localCategories = loadContextCategories();
+      if (localCategories.length > 0) {
+        await syncCollectionDiff('contextCategories', [], localCategories);
+        console.log(`localStorage→Firestore: ${localCategories.length} 件の実行条件カテゴリを初回アップロード`);
+      }
+    }
+
+    // 実行条件候補: 同上
+    if (valuesFromCloud.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.CONTEXT_VALUES, JSON.stringify(valuesFromCloud));
+      console.log(`Firestoreから ${valuesFromCloud.length} 件の実行条件候補を取得`);
+    } else {
+      const localValues = loadContextValues();
+      if (localValues.length > 0) {
+        await syncCollectionDiff('contextValues', [], localValues);
+        console.log(`localStorage→Firestore: ${localValues.length} 件の実行条件候補を初回アップロード`);
       }
     }
   } catch (e) {

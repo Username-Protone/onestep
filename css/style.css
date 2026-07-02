@@ -305,6 +305,56 @@ body {
 }
 
 /* ========================================
+   実行条件 UI
+======================================== */
+.chip-context {
+  background: #faf5ff;
+  color: #9333ea;
+  border: 1px solid #e9d5ff;
+  cursor: default;
+}
+
+.context-pill-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.context-pill {
+  border: 1px solid #e5e7eb;
+  background: white;
+  color: #6b7280;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.context-pill:hover {
+  border-color: #c4b5fd;
+  color: #7c3aed;
+}
+
+.context-pill.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: white;
+}
+
+.context-pill-edit {
+  color: #d1d5db;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.65rem;
+  transition: color 0.15s;
+}
+
+.context-pill-edit:hover {
+  color: #7c3aed;
+}
+
+/* ========================================
    バッジ
 ======================================== */
 .badge {

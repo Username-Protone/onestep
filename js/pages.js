@@ -13,20 +13,25 @@ function renderHome() {
 
   const subtask = getNextSubTask();
   const content = document.getElementById('page-content');
+  const contextBarHtml = renderContextSummaryBar();
 
   if (!subtask) {
+    const filteredByContext = hasAnyIncompleteSubtask();
     content.innerHTML = `
-      <div class="flex items-center justify-center" style="min-height: 60vh;">
-        <div class="text-center">
-          <div class="empty-state">
-            <i class="fas fa-check-circle" style="color: #d1fae5; font-size: 72px;"></i>
-            <h2 class="text-2xl font-semibold text-gray-700 mt-4">すべて完了！</h2>
-            <p class="text-gray-400 text-sm mt-2">今は実行中のタスクがありません。</p>
-          </div>
-          <div class="mt-8 flex gap-3 justify-center">
-            <button onclick="navigateTo('design')" class="btn-primary">
-              <i class="fas fa-plus"></i> 新しいタスクを設計
-            </button>
+      <div class="flex flex-col items-center" style="min-height: 60vh; padding-top: 16px;">
+        ${contextBarHtml}
+        <div class="flex-1 flex items-center justify-center w-full">
+          <div class="text-center">
+            <div class="empty-state">
+              <i class="fas fa-check-circle" style="color: #d1fae5; font-size: 72px;"></i>
+              <h2 class="text-2xl font-semibold text-gray-700 mt-4">${filteredByContext ? '今の条件に合うタスクはありません' : 'すべて完了！'}</h2>
+              <p class="text-gray-400 text-sm mt-2">${filteredByContext ? '上の実行条件を変更すると表示されるかもしれません' : '今は実行中のタスクがありません。'}</p>
+            </div>
+            <div class="mt-8 flex gap-3 justify-center">
+              <button onclick="navigateTo('design')" class="btn-primary">
+                <i class="fas fa-plus"></i> 新しいタスクを設計
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -58,6 +63,7 @@ function renderHome() {
 
   content.innerHTML = `
     <div class="flex flex-col items-center justify-center" style="min-height: 60vh;">
+      ${contextBarHtml}
       <div class="home-card w-full max-w-lg p-10">
 
         <!-- 親タスク名 -->
@@ -116,6 +122,73 @@ function renderHome() {
 function handleCompleteSubTask(id) {
   completeSubTask(id);
   showToast('サブタスクを完了しました ✓');
+  renderHome();
+}
+
+// ========================================
+// ホーム画面: 実行条件パネル（折りたたみ式）
+// ========================================
+
+let contextPanelOpen = false;
+
+function renderContextSummaryBar() {
+  const categories = getContextCategories();
+  if (categories.length === 0) return '';
+
+  const currentContext = loadCurrentContext();
+  const allValues = loadContextValues();
+
+  const summaryHtml = categories.map(cat => {
+    const activeId = currentContext[cat.id];
+    const activeValue = activeId ? allValues.find(v => v.id === activeId) : null;
+    const valueLabel = activeValue ? escHtml(activeValue.label) : '未設定';
+    const valueClass = activeValue ? 'text-gray-700 font-medium' : 'text-gray-300';
+    return `<span class="flex items-center gap-1.5 text-xs"><span class="text-gray-400">【${escHtml(cat.label)}】</span><span class="${valueClass}">${valueLabel}</span></span>`;
+  }).join('<span class="text-gray-200 text-xs">|</span>');
+
+  return `
+    <div class="w-full max-w-lg mb-4">
+      <button onclick="toggleContextPanel()" class="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+        <span class="flex items-center gap-3">${summaryHtml}</span>
+        <i id="context-panel-chevron" class="fas fa-chevron-down text-gray-300 text-xs transition-transform ${contextPanelOpen ? 'rotate-180' : ''}"></i>
+      </button>
+      <div id="context-panel-body" class="${contextPanelOpen ? '' : 'hidden'} mt-2 p-4 bg-white border border-gray-100 rounded-xl space-y-4">
+        ${renderContextPanelBody()}
+      </div>
+    </div>
+  `;
+}
+
+function renderContextPanelBody() {
+  const categories = getContextCategories();
+  const currentContext = loadCurrentContext();
+
+  return categories.map(cat => {
+    const values = getContextValuesByCategory(cat.id);
+    const pills = values.map(v => {
+      const active = currentContext[cat.id] === v.id;
+      return `<button type="button" class="context-pill ${active ? 'active' : ''}" onclick="selectCurrentContext('${cat.id}','${v.id}')">${escHtml(v.label)}</button>`;
+    }).join('');
+    return `
+      <div>
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">${escHtml(cat.label)}</p>
+        <div class="flex flex-wrap gap-2">${pills || '<span class="text-xs text-gray-300">候補なし</span>'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleContextPanel() {
+  contextPanelOpen = !contextPanelOpen;
+  const body = document.getElementById('context-panel-body');
+  const chevron = document.getElementById('context-panel-chevron');
+  if (body) body.classList.toggle('hidden', !contextPanelOpen);
+  if (chevron) chevron.classList.toggle('rotate-180', contextPanelOpen);
+}
+
+// 現在の実行条件を選択（同じ値を再選択したら未設定に戻す）
+function selectCurrentContext(categoryId, valueId) {
+  setCurrentContextValue(categoryId, valueId);
   renderHome();
 }
 
@@ -302,7 +375,7 @@ function renderDesignView(task) {
                 <th>サブタスク名</th>
                 <th>着手日</th>
                 <th>締切日</th>
-                <th>リンク / ファイル</th>
+                <th>リンク / ファイル / 条件</th>
                 <th></th>
               </tr>
             </thead>
@@ -338,6 +411,13 @@ function renderSubTaskRow(s, idx) {
       <span class="chip-remove" onclick="removeFilePath('${s.id}',${fi})" title="削除"><i class="fas fa-xmark"></i></span>
     </span>
   `).join('');
+
+  const allContextValues = loadContextValues();
+  const contextHtml = (s.contextValueIds || []).map(vid => {
+    const val = allContextValues.find(v => v.id === vid);
+    if (!val) return '';
+    return `<span class="chip chip-context" title="実行条件"><i class="fas fa-compass" style="font-size:8px;"></i> ${escHtml(val.label)}</span>`;
+  }).join('');
 
   const completedClass = s.completed ? 'subtask-completed' : '';
 
@@ -383,11 +463,15 @@ function renderSubTaskRow(s, idx) {
         <div class="flex flex-wrap gap-1 items-center">
           ${linksHtml}
           ${filesHtml}
+          ${contextHtml}
           <button onclick="openLinkModal('${s.id}')" class="text-gray-300 hover:text-blue-400 transition-colors" title="URLを追加">
             <i class="fas fa-link text-xs"></i>
           </button>
           <button onclick="openFilePathModal('${s.id}')" class="text-gray-300 hover:text-green-400 transition-colors ml-1" title="ファイルパスを追加">
             <i class="fas fa-folder-open text-xs"></i>
+          </button>
+          <button onclick="openContextModal('${s.id}')" class="text-gray-300 hover:text-purple-400 transition-colors ml-1" title="実行条件を設定">
+            <i class="fas fa-compass text-xs"></i>
           </button>
         </div>
       </td>
@@ -534,6 +618,98 @@ function removeFilePath(subtaskId, index) {
   filePaths.splice(index, 1);
   updateSubTask(subtaskId, { filePaths });
   refreshSubTaskTable();
+}
+
+// ========================================
+// 実行条件 モーダル
+// ========================================
+
+let currentContextModalSubtaskId = null;
+
+function openContextModal(subtaskId) {
+  currentContextModalSubtaskId = subtaskId;
+  renderContextModalBody(subtaskId);
+  openModal('modal-context');
+}
+
+function renderContextModalBody(subtaskId) {
+  const subtask = loadSubTasks().find(s => s.id === subtaskId);
+  const body = document.getElementById('context-modal-body');
+  if (!subtask || !body) return;
+
+  const selectedIds = new Set(subtask.contextValueIds || []);
+  const categories = getContextCategories();
+
+  if (categories.length === 0) {
+    body.innerHTML = `<p class="text-sm text-gray-400">実行条件カテゴリがまだありません</p>`;
+    return;
+  }
+
+  body.innerHTML = categories.map(cat => {
+    const values = getContextValuesByCategory(cat.id);
+    const pills = values.map(v => {
+      const active = selectedIds.has(v.id);
+      return `
+        <span class="context-pill-wrap">
+          <button type="button" class="context-pill ${active ? 'active' : ''}" onclick="toggleContextValueInModal('${v.id}')">${escHtml(v.label)}</button>
+          <span class="context-pill-edit" onclick="renameContextValue('${v.id}')" title="名称を変更"><i class="fas fa-pen"></i></span>
+        </span>
+      `;
+    }).join('');
+
+    return `
+      <div>
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">${escHtml(cat.label)}</p>
+        <div class="flex flex-wrap gap-2 mb-2">${pills || '<span class="text-xs text-gray-300">候補なし</span>'}</div>
+        <div class="flex gap-2">
+          <input
+            type="text"
+            id="context-new-input-${cat.id}"
+            placeholder="新しい${escHtml(cat.label)}を追加"
+            class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addContextValueFromModal('${cat.id}');}"
+          />
+          <button onclick="addContextValueFromModal('${cat.id}')" class="text-xs text-blue-500 hover:text-blue-600 px-2 whitespace-nowrap font-medium">＋ 追加</button>
+        </div>
+      </div>
+    `;
+  }).join('<div class="divider" style="margin:16px 0;"></div>');
+}
+
+function toggleContextValueInModal(valueId) {
+  if (!currentContextModalSubtaskId) return;
+  toggleSubTaskContextValue(currentContextModalSubtaskId, valueId);
+  renderContextModalBody(currentContextModalSubtaskId);
+  refreshSubTaskTable();
+}
+
+function addContextValueFromModal(categoryId) {
+  const input = document.getElementById(`context-new-input-${categoryId}`);
+  if (!input) return;
+  const label = input.value.trim();
+  if (!label) return;
+
+  const value = createContextValue(categoryId, label);
+  if (currentContextModalSubtaskId) {
+    toggleSubTaskContextValue(currentContextModalSubtaskId, value.id);
+  }
+  renderContextModalBody(currentContextModalSubtaskId);
+  refreshSubTaskTable();
+  showToast(`候補「${label}」を追加しました`);
+}
+
+function renameContextValue(valueId) {
+  const value = loadContextValues().find(v => v.id === valueId);
+  if (!value) return;
+  const newLabel = prompt('候補名を変更', value.label);
+  if (newLabel === null) return;
+  const trimmed = newLabel.trim();
+  if (!trimmed || trimmed === value.label) return;
+
+  updateContextValue(valueId, { label: trimmed });
+  renderContextModalBody(currentContextModalSubtaskId);
+  refreshSubTaskTable();
+  showToast('候補名を変更しました');
 }
 
 // ========================================

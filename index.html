@@ -118,6 +118,20 @@
     </div>
   </div>
 
+  <!-- モーダル: 実行条件を選択 -->
+  <div id="modal-context" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+      <h3 class="text-lg font-semibold mb-1 text-gray-800">実行条件を設定</h3>
+      <p class="text-xs text-gray-400 mb-4">未選択のカテゴリは「どこでも／どんな状態でも実行可能」として扱われます</p>
+      <div id="context-modal-body" class="space-y-5">
+        <!-- JSで動的に描画 -->
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="closeModal('modal-context')" class="flex-1 py-2.5 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- モーダルオーバーレイ -->
   <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-30 z-40 hidden" onclick="closeAllModals()"></div>
 
