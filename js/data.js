@@ -173,30 +173,65 @@ function getDeletedTasks() {
 // サブタスク CRUD
 // ========================================
 
-function createSubTask(taskId, { title = '', startDate = '', dueDate = '' } = {}) {
+function createSubTask(taskId, { title = '', startDate = '', dueDate = '', links = [], contextValueIds = [] } = {}) {
+  resequenceSubTasks(taskId); // 既存データにorder未設定のものがあれば先に整える
+
   const subtasks = loadSubTasks();
-  const existingNos = subtasks
+  const maxOrder = subtasks
     .filter(s => s.taskId === taskId && !s.deleted)
-    .map(s => s.no);
-  const nextNo = existingNos.length > 0 ? Math.max(...existingNos) + 1 : 1;
+    .reduce((max, s) => Math.max(max, typeof s.order === 'number' ? s.order : -1), -1);
 
   const subtask = {
     id: generateId(),
     taskId,
-    no: nextNo,
+    no: 0, // resequenceSubTasks で確定させる
+    order: maxOrder + 1,
     title,
     startDate,
     dueDate,
     completed: false,
     deleted: false,
-    links: [],      // [{ label: string, url: string }]
-    contextValueIds: [], // ExecutionContextValue.id の配列（空=そのカテゴリは条件なし）
+    links,          // [{ label: string, url: string }]
+    contextValueIds, // ExecutionContextValue.id の配列（空=そのカテゴリは条件なし）
     createdAt: now(),
     updatedAt: now(),
   };
   subtasks.push(subtask);
   saveSubTasks(subtasks);
+
+  resequenceSubTasks(taskId);
   return subtask;
+}
+
+// order順に0始まりで振り直し、その順番からNo（1始まり・表示専用）を自動採番する。
+// order未設定の既存データが混ざっている場合は、no→作成日時の順序を引き継いでorderを新規付与する（遅延移行）。
+// 実際に値が変わったサブタスクだけ updatedAt を更新するので、Firestoreへの書き込みも変更分のみになる。
+function resequenceSubTasks(taskId) {
+  const subtasks = loadSubTasks();
+  const taskSubtasks = subtasks.filter(s => s.taskId === taskId && !s.deleted);
+  if (taskSubtasks.length === 0) return;
+
+  const sorted = taskSubtasks.slice().sort((a, b) => {
+    const aHasOrder = typeof a.order === 'number';
+    const bHasOrder = typeof b.order === 'number';
+    if (aHasOrder && bHasOrder) return a.order - b.order;
+    if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+    return (a.no - b.no) || a.createdAt.localeCompare(b.createdAt);
+  });
+
+  let anyChanged = false;
+  sorted.forEach((s, idx) => {
+    const target = subtasks.find(x => x.id === s.id);
+    const newNo = idx + 1;
+    if (target.order !== idx || target.no !== newNo) {
+      target.order = idx;
+      target.no = newNo;
+      target.updatedAt = now();
+      anyChanged = true;
+    }
+  });
+
+  if (anyChanged) saveSubTasks(subtasks);
 }
 
 function updateSubTask(id, fields) {
@@ -214,7 +249,10 @@ function updateSubTask(id, fields) {
 }
 
 function deleteSubTask(id) {
-  return updateSubTask(id, { deleted: true });
+  const target = loadSubTasks().find(s => s.id === id);
+  const result = updateSubTask(id, { deleted: true });
+  if (target) resequenceSubTasks(target.taskId); // Noの欠番を詰める
+  return result;
 }
 
 function permanentDeleteSubTask(id) {
@@ -224,9 +262,80 @@ function permanentDeleteSubTask(id) {
 }
 
 function getSubTasksByTaskId(taskId, includeDeleted = false) {
+  if (!includeDeleted) resequenceSubTasks(taskId); // order/No の遅延移行・整合
   return loadSubTasks()
     .filter(s => s.taskId === taskId && (includeDeleted || !s.deleted))
-    .sort((a, b) => a.no - b.no || a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.no - b.no);
+}
+
+// ========================================
+// サブタスク分割（行動開始支援機能）
+// 元サブタスクを削除し、その order 位置へ新しいサブタスク群を挿入する。
+// 後続のサブタスクは order を後ろへずらす。
+// ========================================
+
+// 指定したorderへ直接差し込むための内部生成関数（createSubTaskとは異なり末尾追加ではない）
+function createSubTaskAtOrder(taskId, order, { title = '', startDate = '', dueDate = '', links = [], contextValueIds = [] } = {}) {
+  const subtasks = loadSubTasks();
+  const subtask = {
+    id: generateId(),
+    taskId,
+    no: 0, // resequenceSubTasks で確定させる
+    order,
+    title,
+    startDate,
+    dueDate,
+    completed: false,
+    deleted: false,
+    links,
+    contextValueIds,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  subtasks.push(subtask);
+  saveSubTasks(subtasks);
+  return subtask;
+}
+
+// originalSubtaskId のサブタスクを削除し、newItems（配列）で置き換える。
+// newItems の各要素: { title, startDate, dueDate, links, contextValueIds }
+function splitSubTask(originalSubtaskId, newItems) {
+  const original = loadSubTasks().find(s => s.id === originalSubtaskId);
+  if (!original || newItems.length === 0) return [];
+
+  const taskId = original.taskId;
+  const sortedBefore = getSubTasksByTaskId(taskId); // order/Noを整えつつ現在の並びを取得
+  const insertIndex = sortedBefore.findIndex(s => s.id === originalSubtaskId);
+  if (insertIndex === -1) return [];
+
+  // 元サブタスクをソフト削除する。
+  // updateSubTask() は内部で checkAndCompleteTask() → getSubTasksByTaskId() を
+  // 経由して resequenceSubTasks() を呼ぶため、この時点で削除跡の order は
+  // 自動的に詰められる（例: order 0,1,2,3 → Bを消すと 0,1,2）。
+  // そのため後続をずらす基準は「詰め終わった後のinsertIndex」で考える。
+  updateSubTask(originalSubtaskId, { deleted: true });
+
+  // 挿入位置(insertIndex)以降のサブタスクを newItems.length 個分うしろへずらす
+  const subtasks = loadSubTasks();
+  subtasks.forEach(s => {
+    if (s.taskId === taskId && !s.deleted && typeof s.order === 'number' && s.order >= insertIndex) {
+      s.order += newItems.length;
+      s.updatedAt = now();
+    }
+  });
+  saveSubTasks(subtasks);
+
+  // 新しいサブタスク群を元の位置へ挿入
+  const created = newItems.map((item, idx) => createSubTaskAtOrder(taskId, insertIndex + idx, {
+    title: item.title || '',
+    startDate: item.startDate || '',
+    dueDate: item.dueDate || '',
+    links: item.links || [],
+    contextValueIds: item.contextValueIds || [],
+  }));
+
+  resequenceSubTasks(taskId); // Noを整える
+  return created;
 }
 
 function completeSubTask(id) {
@@ -281,11 +390,19 @@ function getNextSubTask() {
 
   if (subtasks.length === 0) return null;
 
-  // 締切昇順 → 作成日昇順
+  // 締切昇順 → サブタスクの並び順（order）→ 作成日昇順
+  // order は resequenceSubTasks() を通ったタスクにのみ存在するため、
+  // 未移行のタスクが混ざっていても安全に動作するよう作成日時へフォールバックする
+  // （ここでは書き込みを発生させない読み取り専用のフォールバック）
   subtasks.sort((a, b) => {
     const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
     const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
     if (aDate !== bDate) return aDate - bDate;
+
+    const aOrder = typeof a.order === 'number' ? a.order : null;
+    const bOrder = typeof b.order === 'number' ? b.order : null;
+    if (aOrder !== null && bOrder !== null) return aOrder - bOrder;
+
     return a.createdAt.localeCompare(b.createdAt);
   });
 

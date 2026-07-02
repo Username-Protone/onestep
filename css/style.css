@@ -673,6 +673,24 @@ font-size: 0.65rem;
   color: #9ca3af;
 }
 
+/* サブタスク分割画面の下書きテーブル（チェックボックス列がなく6列構成） */
+.draft-table td:nth-child(1) { order: 1; flex: 0 0 auto; }
+.draft-table td:nth-child(6) { order: 2; flex: 0 0 auto; margin-left: auto; }
+.draft-table td:nth-child(2) { order: 3; flex: 1 1 100%; }
+.draft-table td:nth-child(3) { order: 4; flex: 1 1 auto; }
+.draft-table td:nth-child(4) { order: 5; flex: 1 1 auto; }
+.draft-table td:nth-child(5) { order: 6; flex: 1 1 100%; }
+.draft-table td:nth-child(3)::before {
+  content: '着手 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+.draft-table td:nth-child(4)::before {
+  content: '締切 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+
 /* ----------------------------------------
    未完了タスク一覧 → カード表示
    締切日列が画面外に隠れて見えなくなる問題を避ける

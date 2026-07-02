@@ -97,6 +97,11 @@ function renderHome() {
           <i class="fas fa-check mr-2"></i> 完了にする
         </button>
 
+        <!-- サブタスク分割ボタン -->
+        <button onclick="navigateTo('split', '${subtask.id}')" class="btn-secondary w-full justify-center mt-3">
+          <i class="fas fa-arrows-split-up-and-left"></i> サブタスクを分割
+        </button>
+
       </div>
 
       <!-- 下部リンク -->
@@ -270,7 +275,34 @@ function renderTasks() {
 // ========================================
 
 let currentDesignTaskId = null;
-let modalContext = null; // { subtaskId, type: 'link'|'filepath', index?: number }
+let modalContext = null; // { id, type: 'link' }
+
+// ========================================
+// 編集対象の抽象化
+// リンク/実行条件モーダルは「タスク設計画面の実サブタスク」と
+// 「サブタスク分割画面の下書き行（未保存）」の両方から開かれる。
+// id が "draft:<index>" の形式なら下書き配列を、それ以外なら実サブタスクを操作する。
+// ========================================
+
+function resolveEditTarget(id) {
+  if (typeof id === 'string' && id.startsWith('draft:')) {
+    const idx = parseInt(id.slice(6), 10);
+    return {
+      get: () => splitDraftSubtasks[idx],
+      set: (fields) => {
+        splitDraftSubtasks[idx] = { ...splitDraftSubtasks[idx], ...fields };
+        renderSplitDraftTable();
+      },
+    };
+  }
+  return {
+    get: () => loadSubTasks().find(s => s.id === id),
+    set: (fields) => {
+      updateSubTask(id, fields);
+      refreshSubTaskTable();
+    },
+  };
+}
 
 function renderDesign(taskId) {
   setPageTitle('タスク設計');
@@ -541,8 +573,8 @@ function handleSubTaskKeydown(event, id) {
 // リンク・ファイルパス モーダル
 // ========================================
 
-function openLinkModal(subtaskId) {
-  modalContext = { subtaskId, type: 'link' };
+function openLinkModal(id) {
+  modalContext = { id, type: 'link' };
   document.getElementById('link-label').value = '';
   document.getElementById('link-url').value = '';
   openModal('modal-link');
@@ -554,38 +586,38 @@ function saveLink() {
   const url = document.getElementById('link-url').value.trim();
   if (!url) { alert('URLを入力してください'); return; }
 
-  const s = loadSubTasks().find(s => s.id === modalContext.subtaskId);
+  const target = resolveEditTarget(modalContext.id);
+  const s = target.get();
   if (!s) return;
   const links = [...(s.links || []), { label: label || url, url }];
-  updateSubTask(s.id, { links });
+  target.set({ links });
   closeModal('modal-link');
-  refreshSubTaskTable();
   showToast('URLを追加しました');
 }
 
-function removeLink(subtaskId, index) {
-  const s = loadSubTasks().find(s => s.id === subtaskId);
+function removeLink(id, index) {
+  const target = resolveEditTarget(id);
+  const s = target.get();
   if (!s) return;
   const links = [...(s.links || [])];
   links.splice(index, 1);
-  updateSubTask(subtaskId, { links });
-  refreshSubTaskTable();
+  target.set({ links });
 }
 
 // ========================================
 // 実行条件 モーダル
 // ========================================
 
-let currentContextModalSubtaskId = null;
+let currentContextModalTargetId = null;
 
-function openContextModal(subtaskId) {
-  currentContextModalSubtaskId = subtaskId;
-  renderContextModalBody(subtaskId);
+function openContextModal(id) {
+  currentContextModalTargetId = id;
+  renderContextModalBody(id);
   openModal('modal-context');
 }
 
-function renderContextModalBody(subtaskId) {
-  const subtask = loadSubTasks().find(s => s.id === subtaskId);
+function renderContextModalBody(id) {
+  const subtask = resolveEditTarget(id).get();
   const body = document.getElementById('context-modal-body');
   if (!subtask || !body) return;
 
@@ -629,10 +661,14 @@ function renderContextModalBody(subtaskId) {
 }
 
 function toggleContextValueInModal(valueId) {
-  if (!currentContextModalSubtaskId) return;
-  toggleSubTaskContextValue(currentContextModalSubtaskId, valueId);
-  renderContextModalBody(currentContextModalSubtaskId);
-  refreshSubTaskTable();
+  if (!currentContextModalTargetId) return;
+  const target = resolveEditTarget(currentContextModalTargetId);
+  const s = target.get();
+  if (!s) return;
+  const ids = new Set(s.contextValueIds || []);
+  if (ids.has(valueId)) ids.delete(valueId); else ids.add(valueId);
+  target.set({ contextValueIds: Array.from(ids) });
+  renderContextModalBody(currentContextModalTargetId);
 }
 
 function addContextValueFromModal(categoryId) {
@@ -642,11 +678,14 @@ function addContextValueFromModal(categoryId) {
   if (!label) return;
 
   const value = createContextValue(categoryId, label);
-  if (currentContextModalSubtaskId) {
-    toggleSubTaskContextValue(currentContextModalSubtaskId, value.id);
+  if (currentContextModalTargetId) {
+    const target = resolveEditTarget(currentContextModalTargetId);
+    const s = target.get();
+    const ids = new Set((s && s.contextValueIds) || []);
+    ids.add(value.id);
+    target.set({ contextValueIds: Array.from(ids) });
   }
-  renderContextModalBody(currentContextModalSubtaskId);
-  refreshSubTaskTable();
+  renderContextModalBody(currentContextModalTargetId);
   showToast(`候補「${label}」を追加しました`);
 }
 
@@ -659,8 +698,10 @@ function renameContextValue(valueId) {
   if (!trimmed || trimmed === value.label) return;
 
   updateContextValue(valueId, { label: trimmed });
-  renderContextModalBody(currentContextModalSubtaskId);
-  refreshSubTaskTable();
+  renderContextModalBody(currentContextModalTargetId);
+  // ラベル変更はマスター全体に影響するため、現在開いている一覧側があれば再描画する
+  if (document.getElementById('subtask-tbody')) refreshSubTaskTable();
+  if (document.getElementById('split-draft-tbody')) renderSplitDraftTable();
   showToast('候補名を変更しました');
 }
 
@@ -797,6 +838,262 @@ function emptyTrash() {
   tasks.forEach(t => permanentDeleteTask(t.id));
   showToast('ゴミ箱を空にしました');
   renderTrash();
+}
+
+// ========================================
+// サブタスク分割（行動開始支援機能）
+// ホーム画面の「今やること」が実は大きすぎた場合に、
+// その場でさらに小さな作業へ分割し直すための画面。
+// 保存ボタンを押すまでは何もDBに書き込まない下書き状態で編集する。
+// ========================================
+
+let splitOriginalSubtaskId = null;
+let splitDraftSubtasks = []; // [{ title, startDate, dueDate, links, contextValueIds }]
+
+function renderSplit(subtaskId) {
+  const original = loadSubTasks().find(s => s.id === subtaskId);
+  const content = document.getElementById('page-content');
+
+  setPageTitle('サブタスクを分割');
+  setHeaderActions('');
+
+  if (!original) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-triangle-exclamation"></i>
+        <p class="text-lg font-medium text-gray-500">対象のサブタスクが見つかりませんでした</p>
+        <button onclick="navigateTo('home')" class="btn-primary mt-4">ホームへ戻る</button>
+      </div>
+    `;
+    return;
+  }
+
+  splitOriginalSubtaskId = subtaskId;
+  splitDraftSubtasks = [
+    {
+      title: '',
+      startDate: original.startDate,
+      dueDate: original.dueDate,
+      links: [...(original.links || [])],
+      contextValueIds: [...(original.contextValueIds || [])],
+    },
+    {
+      title: '',
+      startDate: original.startDate,
+      dueDate: original.dueDate,
+      links: [...(original.links || [])],
+      contextValueIds: [...(original.contextValueIds || [])],
+    },
+  ];
+
+  // 分割前サブタスクの参考表示（編集不可）
+  const refLinksHtml = (original.links || []).map(l => `
+    <a href="${escHtml(l.url)}" target="_blank" rel="noopener" class="chip chip-link" title="${escHtml(l.url)}">
+      <i class="fas fa-link" style="font-size:9px;"></i> ${escHtml(l.label || l.url)}
+    </a>
+  `).join('');
+  const allContextValues = loadContextValues();
+  const refContextHtml = (original.contextValueIds || []).map(vid => {
+    const val = allContextValues.find(v => v.id === vid);
+    if (!val) return '';
+    return `<span class="chip chip-context" title="実行条件"><i class="fas fa-compass" style="font-size:8px;"></i> ${escHtml(val.label)}</span>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="design-container">
+
+      <!-- 分割前サブタスク（参考表示のみ・編集不可） -->
+      <div class="card p-5 mb-4">
+        <p class="section-title">分割前のサブタスク（参考）</p>
+        <p class="text-lg font-semibold text-gray-800 mb-3">${escHtml(original.title || '（タイトルなし）')}</p>
+        <div class="flex gap-6 mb-3 text-sm">
+          <div>
+            <p class="text-xs text-gray-400 mb-0.5">着手日</p>
+            <p class="text-gray-600">${formatDate(original.startDate)}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 mb-0.5">締切日</p>
+            <p class="text-gray-600">${formatDate(original.dueDate)}</p>
+          </div>
+        </div>
+        ${(refLinksHtml || refContextHtml) ? `<div class="flex flex-wrap gap-2">${refLinksHtml}${refContextHtml}</div>` : ''}
+      </div>
+
+      <p class="text-sm text-gray-500 mb-4">現在のサブタスクがまだ始めにくい場合は、さらに小さな作業へ分割しましょう。</p>
+
+      <!-- 分割後サブタスク（下書き・Notion風表形式） -->
+      <div class="card overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-gray-100">
+          <p class="section-title mb-0">分割後のサブタスク</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="subtask-table draft-table" id="split-draft-table">
+            <colgroup>
+              <col style="width: 40px;">   <!-- No -->
+              <col>                        <!-- タイトル -->
+              <col style="width: 130px;"> <!-- 着手日 -->
+              <col style="width: 130px;"> <!-- 締切日 -->
+              <col style="width: 180px;"> <!-- URL/実行条件 -->
+              <col style="width: 40px;">  <!-- 操作 -->
+            </colgroup>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>サブタスク名</th>
+                <th>着手日</th>
+                <th>締切日</th>
+                <th>URL / 実行条件</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="split-draft-tbody">
+              ${splitDraftSubtasks.map((d, idx) => renderDraftSubtaskRow(d, idx)).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-2 border-t border-gray-50">
+          <button onclick="addDraftRow()" class="add-row-btn text-gray-400 hover:text-blue-500 transition-colors flex items-center gap-1.5 text-sm">
+            <i class="fas fa-plus text-xs"></i> サブタスクを追加
+          </button>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <button onclick="navigateTo('home')" class="btn-secondary">キャンセル</button>
+        <button onclick="confirmSplitSubTask()" class="btn-primary">
+          <i class="fas fa-arrows-split-up-and-left"></i> この内容で分割する
+        </button>
+      </div>
+
+    </div>
+  `;
+}
+
+function renderDraftSubtaskRow(draft, idx) {
+  const id = `draft:${idx}`;
+
+  const linksHtml = (draft.links || []).map((l, li) => `
+    <a href="${escHtml(l.url)}" target="_blank" rel="noopener" class="chip chip-link" title="${escHtml(l.url)}">
+      <i class="fas fa-link" style="font-size:8px;"></i> ${escHtml(l.label || 'URL')}
+      <span class="chip-remove" onclick="event.preventDefault();removeLink('${id}',${li})" title="削除"><i class="fas fa-xmark"></i></span>
+    </a>
+  `).join('');
+
+  const allContextValues = loadContextValues();
+  const contextHtml = (draft.contextValueIds || []).map(vid => {
+    const val = allContextValues.find(v => v.id === vid);
+    if (!val) return '';
+    return `<span class="chip chip-context" title="実行条件"><i class="fas fa-compass" style="font-size:8px;"></i> ${escHtml(val.label)}</span>`;
+  }).join('');
+
+  return `
+    <tr id="draft-row-${idx}">
+      <td class="text-center text-gray-400 text-xs select-none">${idx + 1}</td>
+      <td>
+        <input
+          type="text"
+          class="subtask-input"
+          value="${escHtml(draft.title)}"
+          placeholder="サブタスク名..."
+          onblur="updateDraftField(${idx}, 'title', this.value)"
+          onkeydown="handleDraftKeydown(event, ${idx})"
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          class="subtask-input date-input"
+          value="${draft.startDate || ''}"
+          onchange="updateDraftField(${idx}, 'startDate', this.value)"
+        />
+      </td>
+      <td>
+        <input
+          type="date"
+          class="subtask-input date-input"
+          value="${draft.dueDate || ''}"
+          onchange="updateDraftField(${idx}, 'dueDate', this.value)"
+        />
+      </td>
+      <td>
+        <div class="flex flex-wrap gap-1 items-center">
+          ${linksHtml}
+          ${contextHtml}
+          <button onclick="openLinkModal('${id}')" class="row-action-btn" title="URLを追加">
+            <i class="fas fa-link text-xs"></i> URL
+          </button>
+          <button onclick="openContextModal('${id}')" class="row-action-btn ml-1" title="実行条件を設定">
+            <i class="fas fa-compass text-xs"></i> 実行条件
+          </button>
+        </div>
+      </td>
+      <td class="text-center">
+        <button onclick="removeDraftRow(${idx})" class="text-gray-200 hover:text-red-400 transition-colors p-1" title="削除">
+          <i class="fas fa-xmark text-xs"></i>
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderSplitDraftTable() {
+  const tbody = document.getElementById('split-draft-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = splitDraftSubtasks.map((d, idx) => renderDraftSubtaskRow(d, idx)).join('');
+}
+
+function updateDraftField(idx, field, value) {
+  if (!splitDraftSubtasks[idx]) return;
+  splitDraftSubtasks[idx][field] = value;
+}
+
+function handleDraftKeydown(event, idx) {
+  if (event.key === 'Enter') {
+    event.target.blur();
+    addDraftRow();
+  }
+  if (event.key === 'Escape') {
+    event.target.blur();
+  }
+}
+
+function addDraftRow() {
+  const original = loadSubTasks().find(s => s.id === splitOriginalSubtaskId);
+  splitDraftSubtasks.push({
+    title: '',
+    startDate: original ? original.startDate : '',
+    dueDate: original ? original.dueDate : '',
+    links: original ? [...(original.links || [])] : [],
+    contextValueIds: original ? [...(original.contextValueIds || [])] : [],
+  });
+  renderSplitDraftTable();
+
+  const idx = splitDraftSubtasks.length - 1;
+  setTimeout(() => {
+    const row = document.getElementById(`draft-row-${idx}`);
+    const input = row && row.querySelector('.subtask-input');
+    if (input) input.focus();
+  }, 50);
+}
+
+function removeDraftRow(idx) {
+  splitDraftSubtasks.splice(idx, 1);
+  renderSplitDraftTable();
+}
+
+function confirmSplitSubTask() {
+  const validItems = splitDraftSubtasks
+    .map(d => ({ ...d, title: (d.title || '').trim() }))
+    .filter(d => d.title !== '');
+
+  if (validItems.length === 0) {
+    alert('少なくとも1つはサブタスク名を入力してください');
+    return;
+  }
+
+  splitSubTask(splitOriginalSubtaskId, validItems);
+  showToast(`${validItems.length}件のサブタスクに分割しました`);
+  navigateTo('home');
 }
 
 // ========================================

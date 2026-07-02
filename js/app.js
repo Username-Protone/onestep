@@ -33,6 +33,9 @@ function navigateTo(page, param = null) {
     case 'trash':
       renderTrash();
       break;
+    case 'split':
+      renderSplit(param);
+      break;
     default:
       renderHome();
   }
@@ -87,7 +90,7 @@ function closeModal(id) {
   modal.classList.remove('flex', 'show');
   document.getElementById('modal-overlay').classList.add('hidden');
   modalContext = null;
-  if (id === 'modal-context') currentContextModalSubtaskId = null;
+  if (id === 'modal-context') currentContextModalTargetId = null;
 }
 
 function closeAllModals() {
@@ -100,7 +103,7 @@ function closeAllModals() {
   });
   document.getElementById('modal-overlay').classList.add('hidden');
   modalContext = null;
-  currentContextModalSubtaskId = null;
+  currentContextModalTargetId = null;
 }
 
 // Enterキーでモーダル内のフォームをサブミット
