@@ -278,6 +278,23 @@ body {
   color: #3b82f6;
 }
 
+/* URL / 実行条件をそれぞれ別のグループとして分離表示
+   （タグ行とアイコン+文言のボタン行は常に別の行にする） */
+.link-context-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+}
+
+.link-context-group.is-empty {
+  padding: 0;
+  border: none;
+}
+
 /* ========================================
    リンク・ファイルパス チップ
 ======================================== */
@@ -645,7 +662,7 @@ font-size: 0.65rem;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  border: 1px solid #f3f4f6;
+  border: 1px solid #cbd5e1;
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
@@ -689,6 +706,11 @@ font-size: 0.65rem;
   content: '締切 ';
   font-size: 0.68rem;
   color: #9ca3af;
+}
+/* .subtask-table td:nth-child(5)::before の「締切」ラベルが5列目(URL/実行条件)に
+   引き継がれてしまうのを打ち消す（draft-tableは6列構成でsubtask-tableとは列の意味が異なる） */
+.draft-table td:nth-child(5)::before {
+  content: none;
 }
 
 /* ----------------------------------------

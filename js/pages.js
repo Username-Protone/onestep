@@ -141,17 +141,17 @@ function renderContextSummaryBar() {
     const activeId = currentContext[cat.id];
     const activeValue = activeId ? allValues.find(v => v.id === activeId) : null;
     const valueLabel = activeValue ? escHtml(activeValue.label) : '未設定';
-    const valueClass = activeValue ? 'text-gray-700 font-medium' : 'text-gray-300';
-    return `<span class="flex items-center gap-1.5 text-xs"><span class="text-gray-400">【${escHtml(cat.label)}】</span><span class="${valueClass}">${valueLabel}</span></span>`;
-  }).join('<span class="text-gray-200 text-xs">|</span>');
+    const valueClass = activeValue ? 'text-gray-700 font-medium' : 'text-gray-400';
+    return `<span class="flex items-center gap-1.5 text-xs"><span class="text-gray-500">【${escHtml(cat.label)}】</span><span class="${valueClass}">${valueLabel}</span></span>`;
+  }).join('<span class="text-gray-300 text-xs">|</span>');
 
   return `
     <div class="w-full max-w-lg mb-4">
-      <button onclick="toggleContextPanel()" class="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+      <button onclick="toggleContextPanel()" class="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors">
         <span class="flex items-center gap-3">${summaryHtml}</span>
-        <i id="context-panel-chevron" class="fas fa-chevron-down text-gray-300 text-xs transition-transform ${contextPanelOpen ? 'rotate-180' : ''}"></i>
+        <i id="context-panel-chevron" class="fas fa-chevron-down text-gray-500 text-xs transition-transform ${contextPanelOpen ? 'rotate-180' : ''}"></i>
       </button>
-      <div id="context-panel-body" class="${contextPanelOpen ? '' : 'hidden'} mt-2 p-4 bg-white border border-gray-100 rounded-xl space-y-4">
+      <div id="context-panel-body" class="${contextPanelOpen ? '' : 'hidden'} mt-2 p-4 bg-white border border-gray-300 rounded-xl space-y-4">
         ${renderContextPanelBody()}
       </div>
     </div>
@@ -479,15 +479,19 @@ function renderSubTaskRow(s, idx) {
         />
       </td>
       <td>
-        <div class="flex flex-wrap gap-1 items-center">
-          ${linksHtml}
-          ${contextHtml}
-          <button onclick="openLinkModal('${s.id}')" class="row-action-btn" title="URLを追加">
-            <i class="fas fa-link text-xs"></i> URL
-          </button>
-          <button onclick="openContextModal('${s.id}')" class="row-action-btn ml-1" title="実行条件を設定">
-            <i class="fas fa-compass text-xs"></i> 実行条件
-          </button>
+        <div class="flex flex-col gap-1.5">
+          <div class="link-context-group${linksHtml ? '' : ' is-empty'}">
+            <button onclick="openLinkModal('${s.id}')" class="row-action-btn" title="URLを追加">
+              <i class="fas fa-link text-xs"></i> URL
+            </button>
+            ${linksHtml ? `<div class="flex flex-wrap gap-1">${linksHtml}</div>` : ''}
+          </div>
+          <div class="link-context-group${contextHtml ? '' : ' is-empty'}">
+            <button onclick="openContextModal('${s.id}')" class="row-action-btn" title="実行条件を設定">
+              <i class="fas fa-compass text-xs"></i> 実行条件
+            </button>
+            ${contextHtml ? `<div class="flex flex-wrap gap-1">${contextHtml}</div>` : ''}
+          </div>
         </div>
       </td>
       <td class="text-center">
@@ -1016,15 +1020,19 @@ function renderDraftSubtaskRow(draft, idx) {
         />
       </td>
       <td>
-        <div class="flex flex-wrap gap-1 items-center">
-          ${linksHtml}
-          ${contextHtml}
-          <button onclick="openLinkModal('${id}')" class="row-action-btn" title="URLを追加">
-            <i class="fas fa-link text-xs"></i> URL
-          </button>
-          <button onclick="openContextModal('${id}')" class="row-action-btn ml-1" title="実行条件を設定">
-            <i class="fas fa-compass text-xs"></i> 実行条件
-          </button>
+        <div class="flex flex-col gap-1.5">
+          <div class="link-context-group${linksHtml ? '' : ' is-empty'}">
+            <button onclick="openLinkModal('${id}')" class="row-action-btn" title="URLを追加">
+              <i class="fas fa-link text-xs"></i> URL
+            </button>
+            ${linksHtml ? `<div class="flex flex-wrap gap-1">${linksHtml}</div>` : ''}
+          </div>
+          <div class="link-context-group${contextHtml ? '' : ' is-empty'}">
+            <button onclick="openContextModal('${id}')" class="row-action-btn" title="実行条件を設定">
+              <i class="fas fa-compass text-xs"></i> 実行条件
+            </button>
+            ${contextHtml ? `<div class="flex flex-wrap gap-1">${contextHtml}</div>` : ''}
+          </div>
         </div>
       </td>
       <td class="text-center">
