@@ -44,21 +44,15 @@ function renderHome() {
   const urgentClass = (days !== null && days <= 3) ? 'text-red-500' : 'text-gray-500';
   const urgentBg = (days !== null && days <= 3) ? 'bg-red-50' : 'bg-blue-50';
 
-  // リンクとファイルパスのチップ
+  // リンクのチップ
   const linksHtml = (subtask.links || []).map(l => `
     <a href="${escHtml(l.url)}" target="_blank" rel="noopener" class="chip chip-link" title="${escHtml(l.url)}">
       <i class="fas fa-link" style="font-size:9px;"></i> ${escHtml(l.label || l.url)}
     </a>
   `).join('');
 
-  const filesHtml = (subtask.filePaths || []).map(f => `
-    <span class="chip chip-file" title="${escHtml(f.path)}">
-      <i class="fas fa-folder" style="font-size:9px;"></i> ${escHtml(f.label || f.path)}
-    </span>
-  `).join('');
-
-  const chipsHtml = (linksHtml || filesHtml)
-    ? `<div class="flex flex-wrap gap-2 mt-4">${linksHtml}${filesHtml}</div>`
+  const chipsHtml = linksHtml
+    ? `<div class="flex flex-wrap gap-2 mt-4">${linksHtml}</div>`
     : '';
 
   content.innerHTML = `
@@ -375,7 +369,7 @@ function renderDesignView(task) {
                 <th>サブタスク名</th>
                 <th>着手日</th>
                 <th>締切日</th>
-                <th>リンク / ファイル / 条件</th>
+                <th>URL / 実行条件</th>
                 <th></th>
               </tr>
             </thead>
@@ -403,13 +397,6 @@ function renderSubTaskRow(s, idx) {
       <i class="fas fa-link" style="font-size:8px;"></i> ${escHtml(l.label || 'URL')}
       <span class="chip-remove" onclick="event.preventDefault();removeLink('${s.id}',${li})" title="削除"><i class="fas fa-xmark"></i></span>
     </a>
-  `).join('');
-
-  const filesHtml = (s.filePaths || []).map((f, fi) => `
-    <span class="chip chip-file" title="${escHtml(f.path)}">
-      <i class="fas fa-folder" style="font-size:8px;"></i> ${escHtml(f.label || 'ファイル')}
-      <span class="chip-remove" onclick="removeFilePath('${s.id}',${fi})" title="削除"><i class="fas fa-xmark"></i></span>
-    </span>
   `).join('');
 
   const allContextValues = loadContextValues();
@@ -462,16 +449,12 @@ function renderSubTaskRow(s, idx) {
       <td>
         <div class="flex flex-wrap gap-1 items-center">
           ${linksHtml}
-          ${filesHtml}
           ${contextHtml}
-          <button onclick="openLinkModal('${s.id}')" class="text-gray-300 hover:text-blue-400 transition-colors" title="URLを追加">
-            <i class="fas fa-link text-xs"></i>
+          <button onclick="openLinkModal('${s.id}')" class="row-action-btn" title="URLを追加">
+            <i class="fas fa-link text-xs"></i> URL
           </button>
-          <button onclick="openFilePathModal('${s.id}')" class="text-gray-300 hover:text-green-400 transition-colors ml-1" title="ファイルパスを追加">
-            <i class="fas fa-folder-open text-xs"></i>
-          </button>
-          <button onclick="openContextModal('${s.id}')" class="text-gray-300 hover:text-purple-400 transition-colors ml-1" title="実行条件を設定">
-            <i class="fas fa-compass text-xs"></i>
+          <button onclick="openContextModal('${s.id}')" class="row-action-btn ml-1" title="実行条件を設定">
+            <i class="fas fa-compass text-xs"></i> 実行条件
           </button>
         </div>
       </td>
@@ -565,13 +548,6 @@ function openLinkModal(subtaskId) {
   openModal('modal-link');
 }
 
-function openFilePathModal(subtaskId) {
-  modalContext = { subtaskId, type: 'filepath' };
-  document.getElementById('fp-label').value = '';
-  document.getElementById('fp-path').value = '';
-  openModal('modal-filepath');
-}
-
 function saveLink() {
   if (!modalContext) return;
   const label = document.getElementById('link-label').value.trim();
@@ -587,36 +563,12 @@ function saveLink() {
   showToast('URLを追加しました');
 }
 
-function saveFilePath() {
-  if (!modalContext) return;
-  const label = document.getElementById('fp-label').value.trim();
-  const path = document.getElementById('fp-path').value.trim();
-  if (!path) { alert('ファイルパスを入力してください'); return; }
-
-  const s = loadSubTasks().find(s => s.id === modalContext.subtaskId);
-  if (!s) return;
-  const filePaths = [...(s.filePaths || []), { label: label || path, path }];
-  updateSubTask(s.id, { filePaths });
-  closeModal('modal-filepath');
-  refreshSubTaskTable();
-  showToast('ファイルパスを追加しました');
-}
-
 function removeLink(subtaskId, index) {
   const s = loadSubTasks().find(s => s.id === subtaskId);
   if (!s) return;
   const links = [...(s.links || [])];
   links.splice(index, 1);
   updateSubTask(subtaskId, { links });
-  refreshSubTaskTable();
-}
-
-function removeFilePath(subtaskId, index) {
-  const s = loadSubTasks().find(s => s.id === subtaskId);
-  if (!s) return;
-  const filePaths = [...(s.filePaths || [])];
-  filePaths.splice(index, 1);
-  updateSubTask(subtaskId, { filePaths });
   refreshSubTaskTable();
 }
 
@@ -800,16 +752,16 @@ function renderTrash() {
   }
 
   const cards = tasks.map(task => `
-    <div class="card p-4 mb-3 flex items-center justify-between">
+    <div class="card p-4 mb-3 flex items-center justify-between gap-3 flex-wrap">
       <div>
         <p class="font-medium text-gray-600">${escHtml(task.title || '（タイトルなし）')}</p>
         <p class="text-xs text-gray-400 mt-0.5">締切: ${formatDate(task.dueDate)}</p>
       </div>
-      <div class="flex gap-2">
-        <button onclick="restoreTaskFromTrash('${task.id}')" class="btn-secondary text-xs py-1.5 px-3">
+      <div class="flex gap-2 flex-shrink-0">
+        <button onclick="restoreTaskFromTrash('${task.id}')" class="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap">
           <i class="fas fa-rotate-left mr-1"></i> 復元
         </button>
-        <button onclick="permanentRemoveTask('${task.id}')" class="btn-danger text-xs py-1.5 px-3">
+        <button onclick="permanentRemoveTask('${task.id}')" class="btn-danger text-xs py-1.5 px-3 whitespace-nowrap">
           <i class="fas fa-xmark mr-1"></i> 完全削除
         </button>
       </div>

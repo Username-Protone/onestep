@@ -419,9 +419,6 @@ await batch.commit();
   "links": [
     { "label": "競合A資料", "url": "https://example.com/a" }
   ],
-  "filePaths": [
-    { "label": "下調べ.xlsx", "path": "C:\\Users\\nagoy\\..." }
-  ],
   "createdAt": "2026-05-21T10:01:00.000Z",
   "updatedAt": "2026-05-21T10:01:00.000Z"
 }
@@ -434,7 +431,6 @@ await batch.commit();
 | `no` | 表示順の番号 |
 | `title` | サブタスク名 |
 | `links` | 関連URLの配列（複数追加可） |
-| `filePaths` | 関連ファイルパスの配列 |
 | その他 | Taskと同じフィールド |
 
 ## 🗄️ 保存場所別の構造

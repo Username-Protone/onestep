@@ -91,7 +91,7 @@ function closeModal(id) {
 }
 
 function closeAllModals() {
-  ['modal-link', 'modal-filepath', 'modal-context'].forEach(id => {
+  ['modal-link', 'modal-context'].forEach(id => {
     const modal = document.getElementById(id);
     if (modal) {
       modal.classList.add('hidden');
@@ -111,12 +111,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Enter') {
     const linkModal = document.getElementById('modal-link');
-    const fpModal = document.getElementById('modal-filepath');
     if (!linkModal.classList.contains('hidden') && document.activeElement !== linkModal.querySelector('button')) {
       saveLink();
-    }
-    if (!fpModal.classList.contains('hidden') && document.activeElement !== fpModal.querySelector('button')) {
-      saveFilePath();
     }
   }
 });

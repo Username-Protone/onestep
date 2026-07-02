@@ -240,7 +240,7 @@ body {
 .add-row-btn {
   display: flex;
   align-items: center;
-  gap-6px;
+  gap: 6px;
   padding: 10px 12px;
   color: #9ca3af;
   font-size: 0.8rem;
@@ -253,6 +253,28 @@ body {
 }
 
 .add-row-btn:hover {
+  color: #3b82f6;
+}
+
+/* サブタスク行のURL/実行条件ボタン（アイコン+文言） */
+.row-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.row-action-btn:hover {
+  background: #f8fafc;
+  border-color: #e5e7eb;
   color: #3b82f6;
 }
 
@@ -284,13 +306,6 @@ body {
 
 .chip-link:hover {
   background: #dbeafe;
-}
-
-.chip-file {
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-  cursor: default;
 }
 
 .chip-remove {
@@ -566,12 +581,12 @@ input[type="checkbox"].custom-check:checked::after {
 
 /* モーダル */
 #modal-link,
-#modal-filepath {
+#modal-context {
   animation: none;
 }
 
 #modal-link.show,
-#modal-filepath.show {
+#modal-context.show {
   animation: modal-in 0.2s ease;
 }
 
@@ -593,13 +608,7 @@ input[type="checkbox"].custom-check:checked::after {
 .subtask-table{
 font-size:0.8rem;
 }
-2
-.subtask-table th,
-.subtask-table td {
-padding: 6px 4px;
-}
 .subtask-input {
-min-width: 120px;
 font-size: 16px;
 }
 .task-title-input {
@@ -616,5 +625,95 @@ width: auto;
 .chip {
 max-width: 80px;
 font-size: 0.65rem;
+}
+
+/* ----------------------------------------
+   サブタスクテーブル → カード表示
+   table-layout:fixed の固定列幅がせまい画面で
+   潰れて重なる問題を避けるため、行をカード化する
+---------------------------------------- */
+.subtask-table,
+.subtask-table tbody {
+  display: block;
+  width: 100%;
+}
+.subtask-table thead {
+  display: none;
+}
+.subtask-table tr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  border: 1px solid #f3f4f6;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.subtask-table td {
+  display: block;
+  border: none;
+  padding: 2px 0;
+}
+.subtask-table td:nth-child(1) { order: 1; flex: 0 0 auto; }
+.subtask-table td:nth-child(2) { order: 2; flex: 0 0 auto; }
+.subtask-table td:nth-child(7) { order: 3; flex: 0 0 auto; margin-left: auto; }
+.subtask-table td:nth-child(3) { order: 4; flex: 1 1 100%; }
+.subtask-table td:nth-child(4) { order: 5; flex: 1 1 auto; }
+.subtask-table td:nth-child(5) { order: 6; flex: 1 1 auto; }
+.subtask-table td:nth-child(6) { order: 7; flex: 1 1 100%; }
+.subtask-table td:nth-child(4)::before {
+  content: '着手 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+.subtask-table td:nth-child(5)::before {
+  content: '締切 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+
+/* ----------------------------------------
+   未完了タスク一覧 → カード表示
+   締切日列が画面外に隠れて見えなくなる問題を避ける
+---------------------------------------- */
+.data-table,
+.data-table tbody {
+  display: block;
+  width: 100%;
+}
+.data-table thead {
+  display: none;
+}
+.data-table tr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  padding: 12px 4px;
+}
+.data-table td {
+  display: block;
+  border: none;
+  padding: 2px 0;
+}
+.data-table td:nth-child(1) { flex: 1 1 100%; }
+.data-table td:nth-child(2) { flex: 1 1 100%; }
+.data-table td:nth-child(3) { flex: 1 1 auto; }
+.data-table td:nth-child(4) { flex: 1 1 auto; }
+.data-table td:nth-child(2)::before {
+  content: '次: ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+.data-table td:nth-child(3)::before {
+  content: '着手 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
+}
+.data-table td:nth-child(4)::before {
+  content: '締切 ';
+  font-size: 0.68rem;
+  color: #9ca3af;
 }
 }

@@ -190,7 +190,6 @@ function createSubTask(taskId, { title = '', startDate = '', dueDate = '' } = {}
     completed: false,
     deleted: false,
     links: [],      // [{ label: string, url: string }]
-    filePaths: [],  // [{ label: string, path: string }]
     contextValueIds: [], // ExecutionContextValue.id の配列（空=そのカテゴリは条件なし）
     createdAt: now(),
     updatedAt: now(),
