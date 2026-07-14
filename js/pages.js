@@ -852,7 +852,8 @@ function emptyTrash() {
 // ========================================
 
 let splitOriginalSubtaskId = null;
-let splitDraftSubtasks = []; // [{ title, startDate, dueDate, links, contextValueIds }]
+let splitDraftSubtasks = []; // [{ title, startDate, dueDate, links, contextValueIds }]（分割画面・Inbox変換画面で共有）
+let draftRowDefaults = { startDate: '', dueDate: '', links: [], contextValueIds: [] }; // 「＋追加」で行を増やす際の初期値
 
 function renderSplit(subtaskId) {
   const original = loadSubTasks().find(s => s.id === subtaskId);
@@ -873,6 +874,12 @@ function renderSplit(subtaskId) {
   }
 
   splitOriginalSubtaskId = subtaskId;
+  draftRowDefaults = {
+    startDate: original.startDate,
+    dueDate: original.dueDate,
+    links: [...(original.links || [])],
+    contextValueIds: [...(original.contextValueIds || [])],
+  };
   splitDraftSubtasks = [
     {
       title: '',
@@ -1066,13 +1073,12 @@ function handleDraftKeydown(event, idx) {
 }
 
 function addDraftRow() {
-  const original = loadSubTasks().find(s => s.id === splitOriginalSubtaskId);
   splitDraftSubtasks.push({
     title: '',
-    startDate: original ? original.startDate : '',
-    dueDate: original ? original.dueDate : '',
-    links: original ? [...(original.links || [])] : [],
-    contextValueIds: original ? [...(original.contextValueIds || [])] : [],
+    startDate: draftRowDefaults.startDate || '',
+    dueDate: draftRowDefaults.dueDate || '',
+    links: [...(draftRowDefaults.links || [])],
+    contextValueIds: [...(draftRowDefaults.contextValueIds || [])],
   });
   renderSplitDraftTable();
 
@@ -1102,6 +1108,207 @@ function confirmSplitSubTask() {
   splitSubTask(splitOriginalSubtaskId, validItems);
   showToast(`${validItems.length}件のサブタスクに分割しました`);
   navigateTo('home');
+}
+
+// ========================================
+// Inbox（GTD Inbox）
+// 「考えずに思いついたことを一旦放り込む場所」。
+// 表示するのはタイトル・サブタスク化・完了のみ。整理はしない。
+// ========================================
+
+function renderInbox() {
+  setPageTitle('Inbox');
+  setHeaderActions('');
+  const content = document.getElementById('page-content');
+
+  const items = getActiveInboxItems();
+
+  content.innerHTML = `
+    <div class="design-container">
+
+      <div class="card p-2 mb-4">
+        <div class="flex items-center gap-2 px-2">
+          <i class="fas fa-plus text-gray-300 text-xs"></i>
+          <input
+            type="text"
+            id="inbox-new-input"
+            class="flex-1 border-none focus:outline-none text-sm py-2.5 bg-transparent"
+            placeholder="新しいInbox項目"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();handleAddInboxItem();}"
+          />
+        </div>
+      </div>
+
+      ${items.length === 0 ? `
+        <p class="text-center text-gray-300 text-sm py-12">Inboxは空です</p>
+      ` : `
+        <div class="space-y-2">
+          ${items.map(item => renderInboxRow(item)).join('')}
+        </div>
+      `}
+
+    </div>
+  `;
+
+  const input = document.getElementById('inbox-new-input');
+  if (input) input.focus();
+}
+
+function renderInboxRow(item) {
+  return `
+    <div class="card p-4 flex items-center justify-between gap-3 flex-wrap" id="inbox-row-${item.id}">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <i class="fa-regular fa-square text-gray-300"></i>
+        <span class="text-sm text-gray-700">${escHtml(item.title)}</span>
+      </div>
+      <div class="flex gap-2 flex-shrink-0">
+        <button onclick="navigateTo('inboxConvert', '${item.id}')" class="btn-secondary text-xs py-1.5 px-3 whitespace-nowrap">
+          <i class="fas fa-arrows-split-up-and-left"></i> サブタスク化
+        </button>
+        <button onclick="handleCompleteInboxItem('${item.id}')" class="btn-primary text-xs py-1.5 px-3 whitespace-nowrap">
+          <i class="fas fa-check"></i> 完了
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function handleAddInboxItem() {
+  const input = document.getElementById('inbox-new-input');
+  if (!input) return;
+  const title = input.value.trim();
+  if (!title) return;
+
+  createInboxItem(title);
+  renderInbox();
+  updateInboxBadge();
+}
+
+function handleCompleteInboxItem(id) {
+  completeInboxItem(id);
+  showToast('完了しました ✓');
+  renderInbox();
+  updateInboxBadge();
+}
+
+// ========================================
+// Inbox → サブタスク化画面
+// 既存のサブタスク分割画面と同じ下書きテーブル（Notion風）を再利用する。
+// 保存すると: ①新規タスクを作成 ②下書き行をそのサブタスクとして作成
+// ③Inbox項目を削除 ④ホームへ戻る
+// ========================================
+
+function renderInboxConvert(inboxItemId) {
+  const item = loadInboxItems().find(i => i.id === inboxItemId);
+  const content = document.getElementById('page-content');
+
+  setPageTitle('サブタスク化');
+  setHeaderActions('');
+
+  if (!item) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-triangle-exclamation"></i>
+        <p class="text-lg font-medium text-gray-500">対象のInbox項目が見つかりませんでした</p>
+        <button onclick="navigateTo('inbox')" class="btn-primary mt-4">Inboxへ戻る</button>
+      </div>
+    `;
+    return;
+  }
+
+  splitOriginalSubtaskId = null; // 分割画面の状態と混ざらないようクリア
+  draftRowDefaults = { startDate: '', dueDate: '', links: [], contextValueIds: [] };
+  splitDraftSubtasks = [
+    { title: '', startDate: '', dueDate: '', links: [], contextValueIds: [] },
+    { title: '', startDate: '', dueDate: '', links: [], contextValueIds: [] },
+  ];
+
+  content.innerHTML = `
+    <div class="design-container">
+
+      <!-- 元のInbox項目（参考表示のみ・編集不可） -->
+      <div class="card p-5 mb-4">
+        <p class="section-title">Inbox</p>
+        <p class="text-lg font-semibold text-gray-800">${escHtml(item.title)}</p>
+      </div>
+
+      <p class="text-sm text-gray-500 mb-4">このInbox項目を具体的なサブタスクへ分解してください。</p>
+
+      <!-- サブタスク（下書き・Notion風表形式） -->
+      <div class="card overflow-hidden mb-4">
+        <div class="px-4 py-3 border-b border-gray-100">
+          <p class="section-title mb-0">サブタスク</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="subtask-table draft-table" id="split-draft-table">
+            <colgroup>
+              <col style="width: 40px;">   <!-- No -->
+              <col>                        <!-- タイトル -->
+              <col style="width: 130px;"> <!-- 着手日 -->
+              <col style="width: 130px;"> <!-- 締切日 -->
+              <col style="width: 180px;"> <!-- URL/実行条件 -->
+              <col style="width: 40px;">  <!-- 操作 -->
+            </colgroup>
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>サブタスク名</th>
+                <th>着手日</th>
+                <th>締切日</th>
+                <th>URL / 実行条件</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="split-draft-tbody">
+              ${splitDraftSubtasks.map((d, idx) => renderDraftSubtaskRow(d, idx)).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-2 border-t border-gray-50">
+          <button onclick="addDraftRow()" class="add-row-btn text-gray-400 hover:text-blue-500 transition-colors flex items-center gap-1.5 text-sm">
+            <i class="fas fa-plus text-xs"></i> サブタスクを追加
+          </button>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <button onclick="navigateTo('inbox')" class="btn-secondary">キャンセル</button>
+        <button onclick="confirmInboxConvert('${inboxItemId}')" class="btn-primary">
+          <i class="fas fa-arrows-split-up-and-left"></i> タスクとして追加
+        </button>
+      </div>
+
+    </div>
+  `;
+}
+
+function confirmInboxConvert(inboxItemId) {
+  const validItems = splitDraftSubtasks
+    .map(d => ({ ...d, title: (d.title || '').trim() }))
+    .filter(d => d.title !== '');
+
+  if (validItems.length === 0) {
+    alert('少なくとも1つはサブタスク名を入力してください');
+    return;
+  }
+
+  const item = loadInboxItems().find(i => i.id === inboxItemId);
+  const taskTitle = item ? item.title : '（無題）';
+
+  const task = createTask({ title: taskTitle });
+  validItems.forEach(v => {
+    createSubTask(task.id, {
+      title: v.title,
+      startDate: v.startDate || '',
+      dueDate: v.dueDate || '',
+      links: v.links || [],
+      contextValueIds: v.contextValueIds || [],
+    });
+  });
+
+  removeInboxItem(inboxItemId);
+  showToast(`「${taskTitle}」をタスクへ追加しました`);
+  navigateTo('inbox');
 }
 
 // ========================================

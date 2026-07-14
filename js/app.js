@@ -36,9 +36,24 @@ function navigateTo(page, param = null) {
     case 'split':
       renderSplit(param);
       break;
+    case 'inbox':
+      renderInbox();
+      break;
+    case 'inboxConvert':
+      renderInboxConvert(param);
+      break;
     default:
       renderHome();
   }
+
+  updateInboxBadge();
+}
+
+function updateInboxBadge() {
+  const badge = document.getElementById('inbox-badge');
+  if (!badge) return;
+  const count = getActiveInboxCount();
+  badge.textContent = count > 0 ? `（${count}）` : '';
 }
 
 function updateNavActive(page) {

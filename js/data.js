@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   CONTEXT_CATEGORIES: 'onestep_context_categories',
   CONTEXT_VALUES: 'onestep_context_values',
   CURRENT_CONTEXT: 'onestep_current_context', // ローカル限定・Firestore同期しない
+  INBOX: 'onestep_inbox',
 };
 
 // ========================================
@@ -591,6 +592,68 @@ function subtaskMatchesCurrentContext(subtask) {
 }
 
 // ========================================
+// Inbox（GTD Inbox）
+// 「考えずに思いついたことを一旦放り込む場所」。
+// タスク/サブタスクとは完全に独立したコレクションで管理する。
+// 「完了」はTaskと同じくソフト削除的に completed:true にするだけ
+// （履歴として残す）。「サブタスク化」は内容が実タスクへ引き継がれるため
+// 文字通り削除する（confirmInboxConvert 側で removeInboxItem を呼ぶ）。
+// ========================================
+
+function loadInboxItems() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.INBOX) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveInboxItems(items) {
+  const old = loadInboxItems();
+  localStorage.setItem(STORAGE_KEYS.INBOX, JSON.stringify(items));
+  syncCollectionDiff('inbox', old, items);
+}
+
+function createInboxItem(title) {
+  const items = loadInboxItems();
+  const item = {
+    id: generateId(),
+    title,
+    completed: false,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  items.push(item);
+  saveInboxItems(items);
+  return item;
+}
+
+function completeInboxItem(id) {
+  const items = loadInboxItems();
+  const idx = items.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+  items[idx] = { ...items[idx], completed: true, updatedAt: now() };
+  saveInboxItems(items);
+  return items[idx];
+}
+
+function removeInboxItem(id) {
+  let items = loadInboxItems();
+  items = items.filter(i => i.id !== id);
+  saveInboxItems(items);
+}
+
+function getActiveInboxItems() {
+  return loadInboxItems()
+    .filter(i => !i.completed)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+function getActiveInboxCount() {
+  return loadInboxItems().filter(i => !i.completed).length;
+}
+
+// ========================================
 // サンプルデータ投入（初回起動用）
 // ========================================
 
@@ -624,17 +687,19 @@ async function bootstrapFromFirestore() {
   if (!db) return; // Firebase未初期化なら何もしない
 
   try {
-    const [tasksSnap, subtasksSnap, categoriesSnap, valuesSnap] = await Promise.all([
+    const [tasksSnap, subtasksSnap, categoriesSnap, valuesSnap, inboxSnap] = await Promise.all([
       db.collection('tasks').get(),
       db.collection('subtasks').get(),
       db.collection('contextCategories').get(),
       db.collection('contextValues').get(),
+      db.collection('inbox').get(),
     ]);
 
     const tasksFromCloud = tasksSnap.docs.map(d => d.data());
     const subtasksFromCloud = subtasksSnap.docs.map(d => d.data());
     const categoriesFromCloud = categoriesSnap.docs.map(d => d.data());
     const valuesFromCloud = valuesSnap.docs.map(d => d.data());
+    const inboxFromCloud = inboxSnap.docs.map(d => d.data());
 
     // タスク: Firestoreにデータがあれば取り込み、空ならlocalStorageを初回アップロード
     if (tasksFromCloud.length > 0) {
@@ -681,6 +746,18 @@ async function bootstrapFromFirestore() {
       if (localValues.length > 0) {
         await syncCollectionDiff('contextValues', [], localValues);
         console.log(`localStorage→Firestore: ${localValues.length} 件の実行条件候補を初回アップロード`);
+      }
+    }
+
+    // Inbox: 同上
+    if (inboxFromCloud.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.INBOX, JSON.stringify(inboxFromCloud));
+      console.log(`Firestoreから ${inboxFromCloud.length} 件のInbox項目を取得`);
+    } else {
+      const localInbox = loadInboxItems();
+      if (localInbox.length > 0) {
+        await syncCollectionDiff('inbox', [], localInbox);
+        console.log(`localStorage→Firestore: ${localInbox.length} 件のInbox項目を初回アップロード`);
       }
     }
   } catch (e) {
